@@ -1,0 +1,16 @@
+{
+    "name": "GSplat.Gltf",
+    "rootNamespace": "GSplat",
+    "references": [ "GSplat", "glTFast" ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [ "GSPLAT_GLTFAST" ],
+    "versionDefines": [
+        { "name": "com.unity.cloud.gltfast", "expression": "6.0", "define": "GSPLAT_GLTFAST" }
+    ],
+    "noEngineReferences": false
+}

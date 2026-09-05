@@ -22,14 +22,26 @@ namespace GSplat.Editor
                 return;
             }
 
-            int added = 0;
-            foreach (ScriptableRendererData rendererData in RendererDataOf(pipeline))
+            // Quality levels can point at other pipeline assets (the URP template has PC and Mobile); cover them all.
+            var pipelines = new List<UniversalRenderPipelineAsset> { pipeline };
+            for (int level = 0; level < QualitySettings.count; level++)
             {
-                if (AddFeature(rendererData)) added++;
+                var levelPipeline = QualitySettings.GetRenderPipelineAssetAt(level) as UniversalRenderPipelineAsset;
+                if (levelPipeline != null && !pipelines.Contains(levelPipeline)) pipelines.Add(levelPipeline);
+            }
+
+            int added = 0;
+            var visited = new HashSet<ScriptableRendererData>();
+            foreach (UniversalRenderPipelineAsset asset in pipelines)
+            {
+                foreach (ScriptableRendererData rendererData in RendererDataOf(asset))
+                {
+                    if (visited.Add(rendererData) && AddFeature(rendererData)) added++;
+                }
             }
 
             AssetDatabase.SaveAssets();
-            Debug.Log($"GSplat: renderer feature added to {added} renderer(s) of '{pipeline.name}'.");
+            Debug.Log($"GSplat: renderer feature added to {added} renderer(s) across {pipelines.Count} pipeline asset(s).");
         }
 
         /// <summary>Renderer data assets of a pipeline asset; the list is internal to URP, so it is read through serialization.</summary>

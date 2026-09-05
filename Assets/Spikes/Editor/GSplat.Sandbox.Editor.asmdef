@@ -1,8 +1,14 @@
 {
     "name": "GSplat.Sandbox.Editor",
     "rootNamespace": "GSplat.Sandbox.Editor",
-    "references": [ "GSplat", "GSplat.Sandbox" ],
-    "includePlatforms": [ "Editor" ],
+    "references": [
+        "GSplat",
+        "GSplat.Sandbox",
+        "GSplat.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
