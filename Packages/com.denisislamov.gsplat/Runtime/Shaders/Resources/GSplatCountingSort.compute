@@ -1,29 +1,51 @@
-// Depth sort of splats on the GPU as a 16-bit counting sort, written for the lowest common denominator:
-// no wave/subgroup intrinsics (that is what ties gsplat-unity to D3D12/Metal/Vulkan), thread groups of 128
-// (the OpenGL ES 3.1 minimum) and only groupshared memory + InterlockedAdd. Four kernels, run in order:
+// Depth sort of the visible splats on the GPU as a 16-bit counting sort, written for the lowest common
+// denominator: no wave/subgroup intrinsics (that is what ties gsplat-unity to D3D12/Metal/Vulkan), thread groups
+// of 128 (the OpenGL ES 3.1 minimum) and only groupshared memory + InterlockedAdd. Four kernels, run in order:
 //   ClearHistogram -> ComputeKeys -> PrefixSum -> Scatter
-// Ascending key = back to front (see SplatSortKeys.cs, which the CPU sorter shares).
+// Positions come straight from the packed splat texture (no second copy), work is one thread per slot of the
+// visible chunks (65 536 slots per chunk; the tail of a partial chunk is skipped with EMPTY_KEY), and the result
+// goes into the RGBA8 order texture the vertex shader reads (see ISplatSorter.cs for why a texture).
+// Ascending key = back to front (SplatSortKeys.cs; the CPU sorter shares the definition).
 
 #pragma kernel ClearHistogram
 #pragma kernel ComputeKeys
 #pragma kernel PrefixSum
 #pragma kernel Scatter
 
+#include "../GSplatPacked.hlsl"
+
 #define BUCKET_COUNT 65536
 #define MAX_KEY 65535
+#define EMPTY_KEY 0xFFFFFFFFu
 #define THREADS 128
 #define BUCKETS_PER_THREAD (BUCKET_COUNT / THREADS) // 512
+#define CHUNK_SIZE 65536u
 
-StructuredBuffer<float4> _Positions;      // xyz = splat position, w unused (float4 for 16-byte alignment)
-RWStructuredBuffer<uint> _Keys;           // per splat, 0..65535
+// Mirrors SplatChunkInfo (48 bytes): count + padding, bounds min, bounds max.
+struct ChunkInfo
+{
+    uint4 countAndPadding;
+    float4 boundsMin;
+    float4 boundsMax;
+};
+
+Texture2D<float4> _Splats;
+StructuredBuffer<ChunkInfo> _Chunks;
+StructuredBuffer<uint> _VisibleChunks;
+RWStructuredBuffer<uint> _Keys;           // per slot: 0..65535 or EMPTY_KEY
 RWStructuredBuffer<uint> _Histogram;      // per bucket: count after ComputeKeys, first output slot after PrefixSum
-RWStructuredBuffer<uint> _Order;          // per slot: splat index, back to front
+RWTexture2D<float4> _Order;               // RGBA8: slot -> splat index as 4 bytes
 
-uint _SplatCount;
-float3 _CameraPosition;
+uint _SlotCount;                          // visible chunks x 65536
+float3 _CameraPosition;                   // in the splat object's local space
 float3 _CameraForward;
 float _MinDepth;
 float _InverseDepthRange;
+
+uint SplatIndexOfSlot(uint slot)
+{
+    return _VisibleChunks[slot / CHUNK_SIZE] * CHUNK_SIZE + (slot % CHUNK_SIZE);
+}
 
 [numthreads(THREADS, 1, 1)]
 void ClearHistogram(uint3 id : SV_DispatchThreadID)
@@ -34,20 +56,33 @@ void ClearHistogram(uint3 id : SV_DispatchThreadID)
 [numthreads(THREADS, 1, 1)]
 void ComputeKeys(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= _SplatCount) return;
+    uint slot = id.x;
+    if (slot >= _SlotCount) return;
 
-    float depth = dot(_Positions[id.x].xyz - _CameraPosition, _CameraForward);
+    uint chunkIndex = _VisibleChunks[slot / CHUNK_SIZE];
+    uint local = slot % CHUNK_SIZE;
+    ChunkInfo chunk = _Chunks[chunkIndex];
+    if (local >= chunk.countAndPadding.x)
+    {
+        _Keys[slot] = EMPTY_KEY;
+        return;
+    }
+
+    uint splatIndex = chunkIndex * CHUNK_SIZE + local;
+    GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
+    float3 center = (chunk.boundsMin.xyz + chunk.boundsMax.xyz) * 0.5;
+    float depth = dot(s.position + center - _CameraPosition, _CameraForward);
     float normalized = saturate((depth - _MinDepth) * _InverseDepthRange);
     uint key = MAX_KEY - (uint)(normalized * MAX_KEY + 0.5);
-    _Keys[id.x] = key;
+    _Keys[slot] = key;
     InterlockedAdd(_Histogram[key], 1);
 }
 
 // One thread group turns the histogram into an exclusive prefix sum. Each thread owns 512 consecutive
 // buckets: it sums them, the 128 partial sums are scanned in groupshared memory (Hillis-Steele, 7 steps),
 // then each thread writes the running offsets of its 512 buckets. ~1500 memory operations per thread on a
-// single group is a compromise: it is short in absolute terms (tens of microseconds) and needs no
-// second dispatch or wave intrinsics.
+// single group is a compromise: short in absolute terms (tens of microseconds) and no second dispatch or
+// wave intrinsics needed.
 groupshared uint partialSums[THREADS];
 
 [numthreads(THREADS, 1, 1)]
@@ -64,7 +99,6 @@ void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
     partialSums[thread] = sum;
     GroupMemoryBarrierWithGroupSync();
 
-    // Inclusive scan of the 128 partial sums.
     for (uint stride = 1; stride < THREADS; stride <<= 1)
     {
         uint addend = thread >= stride ? partialSums[thread - stride] : 0;
@@ -73,7 +107,6 @@ void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
         GroupMemoryBarrierWithGroupSync();
     }
 
-    // Exclusive offset of this thread's first bucket = inclusive sum of the previous thread.
     uint running = thread > 0 ? partialSums[thread - 1] : 0;
     for (uint bucket = 0; bucket < BUCKETS_PER_THREAD; bucket++)
     {
@@ -86,10 +119,15 @@ void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
 [numthreads(THREADS, 1, 1)]
 void Scatter(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= _SplatCount) return;
+    uint slot = id.x;
+    if (slot >= _SlotCount) return;
 
-    uint slot;
-    InterlockedAdd(_Histogram[_Keys[id.x]], 1, slot);
+    uint key = _Keys[slot];
+    if (key == EMPTY_KEY) return;
+
+    uint outputSlot;
+    InterlockedAdd(_Histogram[key], 1, outputSlot);
     // Splats with equal keys land in arbitrary order; they are at the same quantized depth, so it does not matter.
-    _Order[slot] = id.x;
+    uint splatIndex = SplatIndexOfSlot(slot);
+    _Order[uint2(outputSlot % GSPLAT_TEXTURE_WIDTH, outputSlot / GSPLAT_TEXTURE_WIDTH)] = GSplatUintToTexel(splatIndex);
 }

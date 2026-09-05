@@ -35,6 +35,12 @@ uint GSplatTexelToUint(float4 texel)
     return bytes.x | (bytes.y << 8) | (bytes.z << 16) | (bytes.w << 24);
 }
 
+// The inverse of GSplatTexelToUint: a uint as an RGBA8 texel (for compute shaders writing the order texture).
+float4 GSplatUintToTexel(uint value)
+{
+    return float4(value & 0xFFu, (value >> 8) & 0xFFu, (value >> 16) & 0xFFu, (value >> 24) & 0xFFu) / 255.0;
+}
+
 // The 16 bytes of splat i as the uint4 PackedSplat.cs describes.
 uint4 GSplatLoadPacked(Texture2D<float4> splats, uint splatIndex)
 {

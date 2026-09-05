@@ -1,0 +1,122 @@
+using System.Collections;
+using System.Collections.Generic;
+using NUnit.Framework;
+using Unity.Collections;
+using Unity.Mathematics;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace GSplat.Tests
+{
+    /// <summary>A random multi-chunk scene on the GPU plus everything a sorter needs, shared by the sort tests.</summary>
+    public sealed class SortTestScene : System.IDisposable
+    {
+        public readonly GsplatData Data;
+        public readonly SplatGpuData Gpu;
+        public readonly NativeArray<int> VisibleChunks;
+        public readonly GraphicsBuffer VisibleChunkBuffer;
+        public readonly float3 CameraPosition = new float3(0f, 0f, -100f);
+        public readonly float3 CameraForward;
+        public readonly float3[] Positions;
+
+        public SortTestScene(int splatCount, uint seed = 99)
+        {
+            CameraForward = math.normalize(new float3(0.2f, -0.1f, 1f));
+            using (SplatCloud cloud = TestCloudsRuntime.Random(splatCount, 0, seed, 50f))
+            {
+                var options = new SplatImportOptions { SourceCoordinateSystem = SplatCoordinateSystem.Ruf, PruneAlphaBelow = 0f };
+                Data = GsplatBuilder.Build(cloud, options);
+            }
+
+            Gpu = new SplatGpuData(Data);
+            Gpu.UploadAll();
+
+            VisibleChunks = new NativeArray<int>(Data.ChunkCount, Allocator.Persistent);
+            for (int chunkIndex = 0; chunkIndex < Data.ChunkCount; chunkIndex++) VisibleChunks[chunkIndex] = chunkIndex;
+            VisibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, Data.ChunkCount, sizeof(int));
+            VisibleChunkBuffer.SetData(VisibleChunks);
+
+            // Reference positions as the packer stored them (quantized), so the assertion checks the sort, not the packing.
+            Positions = new float3[Data.SplatCount];
+            for (int splatIndex = 0; splatIndex < Data.SplatCount; splatIndex++)
+            {
+                PackedSplat.Unpack(Data.Packed[splatIndex], out float3 relative, out _, out _, out _, out _);
+                Positions[splatIndex] = relative + Data.Chunks[splatIndex / SplatChunkInfo.Size].Center;
+            }
+        }
+
+        public SplatSortInput Input()
+        {
+            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
+            return new SplatSortInput
+            {
+                Data = Data,
+                Gpu = Gpu,
+                VisibleChunks = VisibleChunks,
+                VisibleChunkBuffer = VisibleChunkBuffer,
+                VisibleSplatCount = Data.SplatCount,
+                CameraPositionLocal = CameraPosition,
+                CameraForwardLocal = CameraForward,
+                MinDepth = minDepth,
+                MaxDepth = maxDepth
+            };
+        }
+
+        /// <summary>Reads the first <paramref name="count"/> slots of an order texture (Texture2D or RenderTexture) back as splat indices.</summary>
+        public static IEnumerator ReadOrder(Texture orderTexture, int count, List<uint> result)
+        {
+            NativeArray<byte> bytes;
+            if (orderTexture is Texture2D readable)
+            {
+                bytes = readable.GetPixelData<byte>(0);
+                Decode(bytes, count, result);
+                yield break;
+            }
+
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(orderTexture, 0, TextureFormat.RGBA32);
+            while (!request.done) yield return null;
+            Assert.IsFalse(request.hasError, "order texture readback failed");
+            bytes = request.GetData<byte>();
+            Decode(bytes, count, result);
+        }
+
+        private static void Decode(NativeArray<byte> bytes, int count, List<uint> result)
+        {
+            result.Clear();
+            for (int slot = 0; slot < count; slot++)
+            {
+                int byteIndex = slot * 4;
+                result.Add((uint)(bytes[byteIndex] | (bytes[byteIndex + 1] << 8) | (bytes[byteIndex + 2] << 16) | (bytes[byteIndex + 3] << 24)));
+            }
+        }
+
+        /// <summary>Depth must not increase along the order (farthest first) and every splat must appear exactly once.</summary>
+        public void AssertBackToFront(List<uint> order)
+        {
+            Assert.AreEqual(Data.SplatCount, order.Count, "slot count");
+            var seen = new bool[Data.SplatCount];
+            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
+            float bucketSize = (maxDepth - minDepth) / SplatSortKeys.MaxKey;
+            float previousDepth = float.MaxValue;
+            for (int slot = 0; slot < order.Count; slot++)
+            {
+                uint splatIndex = order[slot];
+                Assert.That(splatIndex, Is.LessThan((uint)Data.SplatCount), "index out of range at slot " + slot);
+                Assert.IsFalse(seen[splatIndex], "index appears twice: " + splatIndex);
+                seen[splatIndex] = true;
+
+                float depth = SplatSortKeys.ViewDepth(Positions[splatIndex], CameraPosition, CameraForward);
+                Assert.That(depth, Is.LessThanOrEqualTo(previousDepth + bucketSize * 1.01f + 1e-3f), "order breaks at slot " + slot);
+                previousDepth = depth;
+            }
+        }
+
+        public void Dispose()
+        {
+            VisibleChunkBuffer.Dispose();
+            VisibleChunks.Dispose();
+            Gpu.Dispose();
+            Data.Dispose();
+        }
+    }
+}

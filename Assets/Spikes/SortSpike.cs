@@ -13,12 +13,12 @@ namespace GSplat.Sandbox
     /// <summary>
     /// E0-T3 spike: times the CPU (Burst) and GPU (compute) counting sorts on this device and shows the numbers on
     /// screen, so the same build can be run on every reference phone. Also writes a JSON report next to the
-    /// player data (Application.persistentDataPath/BenchmarkResults). Uses random positions, or the real positions of
-    /// a GaussianSplatAsset when one is assigned.
+    /// player data (Application.persistentDataPath/BenchmarkResults). Sorts a random scene, or the assigned
+    /// GaussianSplatAsset when one is set.
     /// </summary>
     public sealed class SortSpike : MonoBehaviour
     {
-        [SerializeField, Tooltip("Optional: sort the positions of this asset instead of random points.")]
+        [SerializeField, Tooltip("Optional: sort this asset instead of random splats.")]
         private GaussianSplatAsset asset;
 
         [SerializeField, Tooltip("Splats to sort when no asset is assigned.")]
@@ -26,22 +26,18 @@ namespace GSplat.Sandbox
 
         [SerializeField, Range(3, 100)] private int iterations = 20;
 
-        [SerializeField, Tooltip("Compute shader Runtime/Shaders/Resources/GSplatCountingSort.compute (loaded from Resources when empty).")]
-        private ComputeShader countingSortShader;
-
         private readonly StringBuilder screenText = new StringBuilder();
         private readonly List<float> cpuMilliseconds = new List<float>();
         private readonly List<float> gpuMilliseconds = new List<float>();
 
-        private NativeArray<float3> positions;
-        private NativeArray<uint> cpuOrder;
+        private GsplatData data;
+        private SplatGpuData gpu;
+        private NativeArray<int> visibleChunks;
+        private GraphicsBuffer visibleChunkBuffer;
         private CpuCountingSorter cpuSorter;
         private GpuCountingSorter gpuSorter;
-        private GraphicsBuffer positionBuffer;
-        private GraphicsBuffer orderBuffer;
         private CommandBuffer gpuCommands;
-        private float minDepth;
-        private float maxDepth;
+        private SplatSortInput input;
         private int iterationsDone;
         private bool finished;
 
@@ -50,34 +46,38 @@ namespace GSplat.Sandbox
 
         private void Start()
         {
-            LoadPositions();
-            cpuOrder = new NativeArray<uint>(positions.Length, Allocator.Persistent);
-            cpuSorter = new CpuCountingSorter();
+            LoadData();
+            gpu = new SplatGpuData(data);
+            gpu.UploadAll();
 
-            if (countingSortShader == null) countingSortShader = Resources.Load<ComputeShader>("GSplatCountingSort");
-            if (GpuCountingSorter.IsSupported && countingSortShader != null)
+            visibleChunks = new NativeArray<int>(data.ChunkCount, Allocator.Persistent);
+            for (int chunkIndex = 0; chunkIndex < data.ChunkCount; chunkIndex++) visibleChunks[chunkIndex] = chunkIndex;
+            visibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, data.ChunkCount, sizeof(int));
+            visibleChunkBuffer.SetData(visibleChunks);
+
+            SplatSortKeys.DepthRange(data.Chunks, visibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
+            input = new SplatSortInput
             {
-                gpuSorter = new GpuCountingSorter(countingSortShader);
-                var positions4 = new NativeArray<float4>(positions.Length, Allocator.Temp);
-                minDepth = float.MaxValue;
-                maxDepth = float.MinValue;
-                for (int splatIndex = 0; splatIndex < positions.Length; splatIndex++)
-                {
-                    positions4[splatIndex] = new float4(positions[splatIndex], 0f);
-                    float depth = SplatSortKeys.ViewDepth(positions[splatIndex], CameraPosition, CameraForward);
-                    minDepth = math.min(minDepth, depth);
-                    maxDepth = math.max(maxDepth, depth);
-                }
+                Data = data,
+                Gpu = gpu,
+                VisibleChunks = visibleChunks,
+                VisibleChunkBuffer = visibleChunkBuffer,
+                VisibleSplatCount = data.SplatCount,
+                CameraPositionLocal = CameraPosition,
+                CameraForwardLocal = CameraForward,
+                MinDepth = minDepth,
+                MaxDepth = maxDepth
+            };
 
-                positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, positions.Length, 16);
-                positionBuffer.SetData(positions4);
-                positions4.Dispose();
-                orderBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, positions.Length, 4);
+            cpuSorter = new CpuCountingSorter(data.SplatCount);
+            ComputeShader shader = GpuCountingSorter.LoadShader();
+            if (shader != null)
+            {
+                gpuSorter = new GpuCountingSorter(shader, data.SplatCount);
                 gpuCommands = new CommandBuffer { name = "GSplat sort spike" };
-                gpuSorter.Record(gpuCommands, positionBuffer, positions.Length, orderBuffer, CameraPosition, CameraForward, minDepth, maxDepth);
             }
 
-            screenText.AppendLine($"GSplat sort spike: {positions.Length:N0} splats, {SystemInfo.graphicsDeviceType}, {SystemInfo.deviceModel}");
+            screenText.AppendLine($"GSplat sort spike: {data.SplatCount:N0} splats, {SystemInfo.graphicsDeviceType}, {SystemInfo.deviceModel}");
             screenText.AppendLine($"Compute shaders: {(GpuCountingSorter.IsSupported ? "yes" : "no")}");
         }
 
@@ -87,15 +87,19 @@ namespace GSplat.Sandbox
 
             // One iteration per frame so the screen keeps updating on slow phones.
             float cpuStart = Time.realtimeSinceStartup;
-            cpuSorter.Sort(positions, CameraPosition, CameraForward, cpuOrder);
+            cpuSorter.PrepareOnMainThread(input, true);
+            cpuSorter.CompleteNow();
             cpuMilliseconds.Add((Time.realtimeSinceStartup - cpuStart) * 1000f);
 
             if (gpuSorter != null)
             {
                 // Wall time around execute + synchronous readback: the cost of a frame that needs the order right away.
                 float gpuStart = Time.realtimeSinceStartup;
+                gpuCommands.Clear();
+                gpuSorter.PrepareOnMainThread(input, true);
+                gpuSorter.RecordCompute(gpuCommands);
                 Graphics.ExecuteCommandBuffer(gpuCommands);
-                AsyncGPUReadbackRequest readback = AsyncGPUReadback.Request(orderBuffer);
+                AsyncGPUReadbackRequest readback = AsyncGPUReadback.Request(gpuSorter.OrderTexture, 0, TextureFormat.RGBA32);
                 readback.WaitForCompletion();
                 gpuMilliseconds.Add((Time.realtimeSinceStartup - gpuStart) * 1000f);
             }
@@ -119,14 +123,16 @@ namespace GSplat.Sandbox
                 screenText.AppendLine($"GPU counting sort (+sync readback): median {Median(gpuMilliseconds):F2} ms, p95 {Percentile(gpuMilliseconds, 0.95f):F2} ms");
             }
 
+            string gpuMedian = gpuMilliseconds.Count > 0 ? Median(gpuMilliseconds).ToString("F3", CultureInfo.InvariantCulture) : "null";
+            string gpuP95 = gpuMilliseconds.Count > 0 ? Percentile(gpuMilliseconds, 0.95f).ToString("F3", CultureInfo.InvariantCulture) : "null";
             string json = "{\n" +
                 $"  \"device\": \"{SystemInfo.deviceModel}\",\n" +
                 $"  \"graphicsApi\": \"{SystemInfo.graphicsDeviceType}\",\n" +
-                $"  \"splatCount\": {positions.Length},\n" +
+                $"  \"splatCount\": {data.SplatCount},\n" +
                 $"  \"cpuSortMedianMs\": {Median(cpuMilliseconds).ToString("F3", CultureInfo.InvariantCulture)},\n" +
                 $"  \"cpuSortP95Ms\": {Percentile(cpuMilliseconds, 0.95f).ToString("F3", CultureInfo.InvariantCulture)},\n" +
-                $"  \"gpuSortMedianMs\": {(gpuMilliseconds.Count > 0 ? Median(gpuMilliseconds).ToString("F3", CultureInfo.InvariantCulture) : "null")},\n" +
-                $"  \"gpuSortP95Ms\": {(gpuMilliseconds.Count > 0 ? Percentile(gpuMilliseconds, 0.95f).ToString("F3", CultureInfo.InvariantCulture) : "null")}\n" +
+                $"  \"gpuSortMedianMs\": {gpuMedian},\n" +
+                $"  \"gpuSortP95Ms\": {gpuP95}\n" +
                 "}\n";
             string folder = Path.Combine(Application.persistentDataPath, "BenchmarkResults");
             Directory.CreateDirectory(folder);
@@ -136,26 +142,35 @@ namespace GSplat.Sandbox
             Debug.Log(screenText.ToString());
         }
 
-        private void LoadPositions()
+        private void LoadData()
         {
             if (asset != null)
             {
-                using (GsplatData data = asset.LoadData())
-                {
-                    positions = new NativeArray<float3>(data.SplatCount, Allocator.Persistent);
-                    for (int splatIndex = 0; splatIndex < data.SplatCount; splatIndex++)
-                    {
-                        PackedSplat.Unpack(data.Packed[splatIndex], out float3 relative, out _, out _, out _, out _);
-                        positions[splatIndex] = relative + data.Chunks[splatIndex / SplatChunkInfo.Size].Center;
-                    }
-                }
-
+                data = asset.LoadData();
                 return;
             }
 
+            using (SplatCloud cloud = RandomCloud(randomSplatCount))
+            {
+                var options = new SplatImportOptions { SourceCoordinateSystem = SplatCoordinateSystem.Ruf, PruneAlphaBelow = 0f };
+                data = GsplatBuilder.Build(cloud, options);
+            }
+        }
+
+        private static SplatCloud RandomCloud(int count)
+        {
             var random = new Unity.Mathematics.Random(1);
-            positions = new NativeArray<float3>(randomSplatCount, Allocator.Persistent);
-            for (int splatIndex = 0; splatIndex < randomSplatCount; splatIndex++) positions[splatIndex] = random.NextFloat3(-50f, 50f);
+            var cloud = new SplatCloud(count, 0, false);
+            for (int splatIndex = 0; splatIndex < count; splatIndex++)
+            {
+                cloud.Positions[splatIndex] = random.NextFloat3(-50f, 50f);
+                cloud.LogScales[splatIndex] = new float3(-4f);
+                cloud.Rotations[splatIndex] = new float4(0f, 0f, 0f, 1f);
+                cloud.Alphas[splatIndex] = 1f;
+                cloud.Colors[splatIndex] = float3.zero;
+            }
+
+            return cloud;
         }
 
         private static float Median(List<float> values)
@@ -181,13 +196,13 @@ namespace GSplat.Sandbox
 
         private void OnDestroy()
         {
-            if (positions.IsCreated) positions.Dispose();
-            if (cpuOrder.IsCreated) cpuOrder.Dispose();
             cpuSorter?.Dispose();
             gpuSorter?.Dispose();
-            positionBuffer?.Dispose();
-            orderBuffer?.Dispose();
             gpuCommands?.Dispose();
+            visibleChunkBuffer?.Dispose();
+            if (visibleChunks.IsCreated) visibleChunks.Dispose();
+            gpu?.Dispose();
+            data?.Dispose();
         }
     }
 }

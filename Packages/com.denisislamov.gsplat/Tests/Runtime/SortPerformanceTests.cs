@@ -1,7 +1,5 @@
 using System.Collections;
 using NUnit.Framework;
-using Unity.Collections;
-using Unity.Mathematics;
 using Unity.PerformanceTesting;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -20,65 +18,58 @@ namespace GSplat.Tests
         [Test, Performance]
         public void CpuCountingSort500k()
         {
-            var random = new Unity.Mathematics.Random(1);
-            var positions = new NativeArray<float3>(SplatCount, Allocator.Persistent);
-            var order = new NativeArray<uint>(SplatCount, Allocator.Persistent);
-            for (int splatIndex = 0; splatIndex < SplatCount; splatIndex++) positions[splatIndex] = random.NextFloat3(-50f, 50f);
-
-            using (var sorter = new CpuCountingSorter())
+            using (var scene = new SortTestScene(SplatCount, 1))
+            using (var sorter = new CpuCountingSorter(SplatCount))
             {
-                Measure.Method(() => sorter.Sort(positions, new float3(0f, 0f, -100f), new float3(0f, 0f, 1f), order))
+                SplatSortInput input = scene.Input();
+                Measure.Method(() =>
+                    {
+                        sorter.PrepareOnMainThread(input, true);
+                        sorter.CompleteNow();
+                    })
                     .WarmupCount(3)
                     .MeasurementCount(20)
                     .Run();
             }
-
-            positions.Dispose();
-            order.Dispose();
         }
 
         [UnityTest, Performance]
         public IEnumerator GpuCountingSort500k()
         {
             if (!GpuCountingSorter.IsSupported) Assert.Ignore("No compute shaders on this device.");
-            var shader = Resources.Load<ComputeShader>("GSplatCountingSort");
-            if (shader == null) Assert.Ignore("GSplatCountingSort.compute is not in a Resources folder.");
+            ComputeShader shader = GpuCountingSorter.LoadShader();
 
-            var random = new Unity.Mathematics.Random(1);
-            var positions = new NativeArray<float4>(SplatCount, Allocator.Persistent);
-            for (int splatIndex = 0; splatIndex < SplatCount; splatIndex++) positions[splatIndex] = new float4(random.NextFloat3(-50f, 50f), 0f);
-            var positionBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, SplatCount, 16);
-            var orderBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, SplatCount, 4);
-            positionBuffer.SetData(positions);
-
-            using (var sorter = new GpuCountingSorter(shader))
+            using (var scene = new SortTestScene(SplatCount, 1))
+            using (var sorter = new GpuCountingSorter(shader, SplatCount))
             using (var commands = new CommandBuffer())
             {
-                sorter.Record(commands, positionBuffer, SplatCount, orderBuffer, new float3(0f, 0f, -100f), new float3(0f, 0f, 1f), 0f, 200f);
-                // GPU time is measured as wall time around execute + a readback wait: it includes the sync, which is
-                // exactly what a frame that needs the result immediately would pay.
+                SplatSortInput input = scene.Input();
+
+                // Wall time around execute + a readback wait: includes the sync a frame that needs the result right away would pay.
                 for (int iteration = 0; iteration < 3; iteration++)
                 {
-                    Graphics.ExecuteCommandBuffer(commands);
-                    AsyncGPUReadbackRequest warmup = AsyncGPUReadback.Request(orderBuffer);
-                    warmup.WaitForCompletion();
+                    RunOnce(sorter, input, commands);
                 }
 
                 var sampleGroup = new SampleGroup("GpuSortWithSync", SampleUnit.Millisecond);
                 for (int iteration = 0; iteration < 20; iteration++)
                 {
                     float start = Time.realtimeSinceStartup;
-                    Graphics.ExecuteCommandBuffer(commands);
-                    AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(orderBuffer);
-                    request.WaitForCompletion();
+                    RunOnce(sorter, input, commands);
                     Measure.Custom(sampleGroup, (Time.realtimeSinceStartup - start) * 1000f);
                     yield return null;
                 }
             }
+        }
 
-            positionBuffer.Dispose();
-            orderBuffer.Dispose();
-            positions.Dispose();
+        private static void RunOnce(GpuCountingSorter sorter, SplatSortInput input, CommandBuffer commands)
+        {
+            commands.Clear();
+            sorter.PrepareOnMainThread(input, true);
+            sorter.RecordCompute(commands);
+            Graphics.ExecuteCommandBuffer(commands);
+            AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(sorter.OrderTexture, 0, TextureFormat.RGBA32);
+            request.WaitForCompletion();
         }
     }
 }
