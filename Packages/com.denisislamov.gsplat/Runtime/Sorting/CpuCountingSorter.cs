@@ -138,7 +138,7 @@ namespace GSplat
             if (visibleChunksCopy.IsCreated) visibleChunksCopy.Dispose();
             if (orderTexture != null)
             {
-                UnityEngine.Object.Destroy(orderTexture);
+                SplatObjectUtility.Destroy(orderTexture);
                 orderTexture = null;
             }
         }

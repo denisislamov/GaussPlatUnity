@@ -20,7 +20,7 @@ namespace GSplat.Tests
             }
         }
 
-        private static IEnumerator Await<T>(Awaitable<T> awaitable, Action<T> onResult, Action<Exception> onError)
+        public static IEnumerator Await<T>(Awaitable<T> awaitable, Action<T> onResult, Action<Exception> onError)
         {
             bool done = false;
             Run();

@@ -67,9 +67,13 @@ namespace GSplat.Editor
                 largestSize = Mathf.Max(largestSize, bounds.size.magnitude);
             }
 
-            float totalWidth = cursorX;
-            cameraObject.transform.position = new Vector3(totalWidth * 0.5f, largestSize * 0.4f, -largestSize * 1.2f);
-            cameraObject.transform.LookAt(new Vector3(totalWidth * 0.5f, largestSize * 0.2f, 0f));
+            // Phone captures include a sphere of background splats hundreds of meters across, so the camera starts
+            // inside the first scene, near its center, looking along +Z; the far plane follows the bounds.
+            GaussianSplatAsset first = assets[0];
+            float firstSize = Mathf.Max(first.Bounds.size.x, first.Bounds.size.z);
+            cameraObject.transform.position = new Vector3(firstSize * 0.5f, -first.Bounds.min.y + first.Bounds.center.y + 0.5f, -first.Bounds.center.z - first.Bounds.size.z * 0.05f);
+            cameraObject.transform.rotation = Quaternion.identity;
+            camera.farClipPlane = Mathf.Max(500f, largestSize * 2f);
 
             EditorSceneManager.SaveScene(scene, scenePath);
             Debug.Log($"GSplat: sample scene with {assets.Count} asset(s) saved to {scenePath}.");

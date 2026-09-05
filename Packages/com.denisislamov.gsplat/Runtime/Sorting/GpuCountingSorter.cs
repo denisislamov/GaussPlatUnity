@@ -134,7 +134,7 @@ namespace GSplat
             if (orderTexture != null)
             {
                 orderTexture.Release();
-                UnityEngine.Object.Destroy(orderTexture);
+                SplatObjectUtility.Destroy(orderTexture);
                 orderTexture = null;
             }
         }

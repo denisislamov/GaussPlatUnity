@@ -190,7 +190,7 @@ namespace GSplat
             UploadedChunkCount++;
             if (IsFullyUploaded && stagingTexture != null)
             {
-                UnityEngine.Object.Destroy(stagingTexture);
+                SplatObjectUtility.Destroy(stagingTexture);
                 stagingTexture = null;
             }
         }
@@ -209,10 +209,10 @@ namespace GSplat
 
         public void Dispose()
         {
-            if (SplatTexture != null) { UnityEngine.Object.Destroy(SplatTexture); SplatTexture = null; }
-            if (stagingTexture != null) { UnityEngine.Object.Destroy(stagingTexture); stagingTexture = null; }
-            if (ShTexture != null) { UnityEngine.Object.Destroy(ShTexture); ShTexture = null; }
-            if (ChunkCenterTexture != null) { UnityEngine.Object.Destroy(ChunkCenterTexture); ChunkCenterTexture = null; }
+            if (SplatTexture != null) { SplatObjectUtility.Destroy(SplatTexture); SplatTexture = null; }
+            if (stagingTexture != null) { SplatObjectUtility.Destroy(stagingTexture); stagingTexture = null; }
+            if (ShTexture != null) { SplatObjectUtility.Destroy(ShTexture); ShTexture = null; }
+            if (ChunkCenterTexture != null) { SplatObjectUtility.Destroy(ChunkCenterTexture); ChunkCenterTexture = null; }
             ChunkBuffer?.Dispose();
             ChunkBuffer = null;
         }
