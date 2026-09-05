@@ -31,17 +31,21 @@ namespace GSplat
         }
 
         /// <summary>
-        /// Color is the raw zeroth SH coefficient, stored as round(coefficient * Sh0Scale * 255 + 127.5).
-        /// That is the displayable color (0.5 + Sh0Scale * c) in 8 bits, so values are clamped to [0, 1] here.
+        /// SPZ's own color constant: the zeroth SH coefficient is stored as round(c * 0.15 * 255 + 127.5). Note that
+        /// this is NOT the SH0 basis constant (0.2821): a stored byte b means c = (b/255 - 0.5) / 0.15, and the
+        /// displayable color is 0.5 + 0.2821 * c, i.e. contrast around mid-grey is stretched by 0.2821 / 0.15 = 1.88.
+        /// Using 0.2821 here makes every scene look washed out (that was a real bug, caught against Spark).
         /// </summary>
+        public const float ColorScale = 0.15f;
+
         public static byte EncodeColor(float sh0Coefficient)
         {
-            return (byte)math.clamp((int)math.round(sh0Coefficient * ShMath.Sh0Scale * 255f + 127.5f), 0, 255);
+            return (byte)math.clamp((int)math.round(sh0Coefficient * ColorScale * 255f + 127.5f), 0, 255);
         }
 
         public static float DecodeColor(byte encoded)
         {
-            return (encoded / 255f - 0.5f) / ShMath.Sh0Scale;
+            return (encoded / 255f - 0.5f) / ColorScale;
         }
 
         /// <summary>Higher SH coefficients: round(x * 128 + 128), i.e. [-1, 1) in 1/128 steps.</summary>

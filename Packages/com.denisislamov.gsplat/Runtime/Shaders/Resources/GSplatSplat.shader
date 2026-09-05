@@ -43,6 +43,8 @@ Shader "GSplat/Splat"
                 int _SrgbInput;          // 1 = splat colors are sRGB and must become linear before blending (linear projects)
                 int _DebugMode;          // 0 normal, 1 chunk colors, 2 overdraw heat, 3 ellipse outlines
                 float _MinPixelRadius;   // splats whose own radius (before dilation) is below this are skipped
+                float _Dilation;         // pixels^2 added to the 2D covariance diagonal; 0.3 is the 3DGS rasterizer's value, 0 = off
+                float _MaxPixelRadius;   // splats reaching further than this are shrunk to it (Spark: 512); huge near-camera floaters otherwise veil the whole screen
             CBUFFER_END
 
             struct Varyings
@@ -95,16 +97,23 @@ Shader "GSplat/Splat"
                 float midBefore = 0.5 * (cov.x + cov.z);
                 float lambdaBefore = midBefore + sqrt(max(midBefore * midBefore - detBefore, 0.0));
                 if (_MaxStdDev * sqrt(lambdaBefore) < _MinPixelRadius) return Culled();
-                cov.x += 0.3;
-                cov.z += 0.3;
+                cov.x += _Dilation;
+                cov.z += _Dilation;
                 float detAfter = cov.x * cov.z - cov.y * cov.y;
-                float compensation = _Antialiased != 0 ? sqrt(max(detBefore / detAfter, 0.0)) : 1.0;
+                float compensation = _Antialiased != 0 && _Dilation > 0.0 ? sqrt(max(detBefore / detAfter, 0.0)) : 1.0;
 
                 float2 majorAxis;
                 float lambdaMajor, lambdaMinor;
                 GSplatEllipseAxes(cov, majorAxis, lambdaMajor, lambdaMinor);
                 float radiusMajor = _MaxStdDev * sqrt(lambdaMajor);
                 float radiusMinor = _MaxStdDev * sqrt(lambdaMinor);
+                if (_MaxPixelRadius > 0.0 && radiusMajor > _MaxPixelRadius)
+                {
+                    // Same shape, smaller footprint: the falloff is compressed into the clamped quad, opacity unchanged.
+                    float shrink = _MaxPixelRadius / radiusMajor;
+                    radiusMajor *= shrink;
+                    radiusMinor *= shrink;
+                }
 
                 float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
                 float2 minorAxis = float2(-majorAxis.y, majorAxis.x);

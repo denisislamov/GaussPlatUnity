@@ -10,7 +10,7 @@ ScriptedImporter:
   script: {fileID: 11500000, guid: ff78c488a7c23468ca72fc2787e65888, type: 3}
   options:
     SourceCoordinateSystem: 1
-    TargetShDegree: 0
+    TargetShDegree: 3
     PruneAlphaBelow: 0.003921569
     MaxSplatCount: 0
     SpatialSort: 1

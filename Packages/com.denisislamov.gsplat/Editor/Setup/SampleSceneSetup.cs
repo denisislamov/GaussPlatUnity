@@ -22,6 +22,24 @@ namespace GSplat.Editor
             CreateSceneFromFolder(SamplesFolder, ScenePath);
         }
 
+        /// <summary>Re-imports every .spz/.ply under the samples folder keeping SH degree 3 (the importer default is 0, tuned for phones).</summary>
+        [MenuItem("GSplat/Setup/Reimport Niantic Samples With SH 3")]
+        public static void ReimportSamplesWithSh3()
+        {
+            foreach (string file in System.IO.Directory.GetFiles(SamplesFolder))
+            {
+                string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                if (extension != ".spz" && extension != ".ply") continue;
+
+                var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
+                if (importer == null) continue;
+                importer.Options.TargetShDegree = ShMath.MaxDegree;
+                EditorUtility.SetDirty(importer);
+                importer.SaveAndReimport();
+                Debug.Log("GSplat: reimported with SH 3: " + file);
+            }
+        }
+
         public static void CreateSceneFromFolder(string folder, string scenePath)
         {
             // New scene first: NewScene(Single) unloads unreferenced assets, which would destroy assets loaded before it.

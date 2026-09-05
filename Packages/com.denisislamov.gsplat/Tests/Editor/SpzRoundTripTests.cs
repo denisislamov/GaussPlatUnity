@@ -102,7 +102,7 @@ namespace GSplat.Tests
                 AssertClose(expected.Positions[splatIndex], actual.Positions[splatIndex], positionStep, "position " + splatIndex);
                 AssertClose(expected.LogScales[splatIndex], actual.LogScales[splatIndex], 1f / 32f + 1e-4f, "scale " + splatIndex);
                 Assert.AreEqual(expected.Alphas[splatIndex], actual.Alphas[splatIndex], 1f / 255f, "alpha " + splatIndex);
-                AssertClose(expected.Colors[splatIndex], actual.Colors[splatIndex], 1f / (255f * ShMath.Sh0Scale) + 1e-4f, "color " + splatIndex);
+                AssertClose(expected.Colors[splatIndex], actual.Colors[splatIndex], 1f / (255f * SpzQuantization.ColorScale) + 1e-4f, "color " + splatIndex);
                 float dot = math.abs(math.dot(expected.Rotations[splatIndex], actual.Rotations[splatIndex]));
                 Assert.That(dot, Is.GreaterThan(0.997f), "rotation " + splatIndex);
             }

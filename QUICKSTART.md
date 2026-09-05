@@ -34,6 +34,8 @@ On the renderer component:
   and is cheaper.
 - **Sh Degree**: view-dependent color. 0 on phones.
 - **Sorter Kind**: Auto picks the GPU sorter when compute shaders exist.
+- **Dilation** and **Max Pixel Radius** default to what InnerTest viewer uses (0 and 512). With these and
+  SH 3 the horned lizard sample matches Spark at 37.7 dB PSNR from the same camera.
 
 ## The viewer
 

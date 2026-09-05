@@ -32,22 +32,31 @@ namespace GSplat.Tests
         }
 
         [Test]
-        public void ColorRoundTripsInsideTheDisplayableRange()
+        public void ColorRoundTripsInsideTheStoredRange()
         {
-            // Displayable colors are 0.5 + Sh0Scale * c in [0, 1], so c in [-1.77, 1.77].
-            for (float coefficient = -1.7f; coefficient <= 1.7f; coefficient += 0.1f)
+            // Stored bytes cover c in [-3.33, 3.33] (0.5 / 0.15); displayable colors need only [-1.77, 1.77].
+            for (float coefficient = -3.2f; coefficient <= 3.2f; coefficient += 0.1f)
             {
                 float decoded = SpzQuantization.DecodeColor(SpzQuantization.EncodeColor(coefficient));
-                Assert.AreEqual(coefficient, decoded, 1f / (255f * ShMath.Sh0Scale) + 1e-5f, $"coefficient {coefficient}");
+                Assert.AreEqual(coefficient, decoded, 1f / (255f * SpzQuantization.ColorScale) + 1e-5f, $"coefficient {coefficient}");
             }
         }
 
         [Test]
         public void ColorOfZeroCoefficientIsMidGrey()
         {
-            // 0 * scale * 255 + 127.5 rounds to 128 -> 128/255 = 0.502 display; back to coefficient ~0.007.
             byte encoded = SpzQuantization.EncodeColor(0f);
             Assert.AreEqual(128, encoded);
+        }
+
+        [Test]
+        public void StoredByteMapsToDisplayColorWithTheSpzContrastStretch()
+        {
+            // The reference: byte 200 -> c = (200/255 - 0.5) / 0.15 = 1.895 -> display 0.5 + 0.2821 * 1.895 = 1.035 (clamped to 1).
+            // byte 140 -> c = 0.3268 -> display 0.592, not 140/255 = 0.549.
+            float c = SpzQuantization.DecodeColor(140);
+            float display = 0.5f + ShMath.Sh0Scale * c;
+            Assert.AreEqual(0.592f, display, 0.002f);
         }
 
         [Test]

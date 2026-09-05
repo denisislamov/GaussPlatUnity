@@ -33,6 +33,8 @@ namespace GSplat
         private static readonly int SrgbInputId = Shader.PropertyToID("_SrgbInput");
         private static readonly int DebugModeId = Shader.PropertyToID("_DebugMode");
         private static readonly int MinPixelRadiusId = Shader.PropertyToID("_MinPixelRadius");
+        private static readonly int DilationId = Shader.PropertyToID("_Dilation");
+        private static readonly int MaxPixelRadiusId = Shader.PropertyToID("_MaxPixelRadius");
 
         [SerializeField, Tooltip("Imported .spz/.ply. Leave empty when the data is set from code (SetData).")]
         private GaussianSplatAsset asset;
@@ -46,6 +48,12 @@ namespace GSplat
 
         [SerializeField, Range(0f, 3f), Tooltip("Splats whose own radius (largest axis, before the 0.3 px anti-aliasing dilation) projects below this many pixels are skipped. 0 draws everything. Hundreds of thousands of sub-pixel quads are what makes tile-based GPUs slow, so 0.5 is a good default; raise it on weak phones.")]
         private float minPixelRadius = 0.5f;
+
+        [SerializeField, Min(0f), Tooltip("Splats that would reach further than this many pixels are shrunk to it. Phone captures have huge background splats that otherwise cover the whole screen when the camera is inside the scene. 512 is Spark's default; 0 = no limit.")]
+        private float maxPixelRadius = 512f;
+
+        [SerializeField, Range(0f, 1f), Tooltip("Low-pass filter added to every splat's screen covariance (pixels squared). 0 matches InnerTest viewer (Spark) and is the default; 0.3 is what the original 3DGS rasterizer uses and softens thin splats at the cost of a slight haze. Mip-splatting scenes compensate the opacity automatically.")]
+        private float dilation = 0f;
 
         [Header("Look")]
         [SerializeField, Range(0f, 2f)] private float brightness = 1f;
@@ -114,6 +122,8 @@ namespace GSplat
         public float MaxStdDev { get => maxStdDev; set => maxStdDev = Mathf.Clamp(value, 1f, 4f); }
         public int ShDegree { get => shDegree; set => shDegree = Mathf.Clamp(value, 0, ShMath.MaxDegree); }
         public float MinPixelRadius { get => minPixelRadius; set => minPixelRadius = Mathf.Max(0f, value); }
+        public float Dilation { get => dilation; set => dilation = Mathf.Clamp(value, 0f, 1f); }
+        public float MaxPixelRadius { get => maxPixelRadius; set => maxPixelRadius = Mathf.Max(0f, value); }
         public float Brightness { get => brightness; set => brightness = Mathf.Max(0f, value); }
         public float Opacity { get => opacity; set => opacity = Mathf.Clamp01(value); }
         public bool ConvertSrgbToLinear { get => convertSrgbToLinear; set => convertSrgbToLinear = value; }
@@ -385,6 +395,8 @@ namespace GSplat
             properties.SetInt(SrgbInputId, convertSrgbToLinear && QualitySettings.activeColorSpace == ColorSpace.Linear ? 1 : 0);
             properties.SetInt(DebugModeId, (int)debugMode);
             properties.SetFloat(MinPixelRadiusId, minPixelRadius);
+            properties.SetFloat(DilationId, dilation);
+            properties.SetFloat(MaxPixelRadiusId, maxPixelRadius);
         }
 
         private void OnDrawGizmosSelected()
