@@ -1,0 +1,31 @@
+using UnityEditor;
+using UnityEditor.SceneManagement;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace GSplat.Sandbox.Editor
+{
+    /// <summary>Creates Assets/Scenes/SortSpike.unity: a camera and the SortSpike runner. Menu GSplat/Spikes or -executeMethod from CI.</summary>
+    public static class SpikeSceneSetup
+    {
+        private const string ScenePath = "Assets/Scenes/SortSpike.unity";
+
+        [MenuItem("GSplat/Spikes/Create Sort Spike Scene")]
+        public static void CreateSortSpikeScene()
+        {
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var cameraObject = new GameObject("Main Camera");
+            Camera camera = cameraObject.AddComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.1f, 0.1f, 0.12f);
+            cameraObject.tag = "MainCamera";
+
+            var runner = new GameObject("Sort Spike");
+            runner.AddComponent<SortSpike>();
+
+            EditorSceneManager.SaveScene(scene, ScenePath);
+            Debug.Log("Created " + ScenePath);
+        }
+    }
+}
