@@ -33,8 +33,17 @@ namespace GSplat
         /// <summary>One <see cref="SplatChunkInfo"/> per chunk.</summary>
         public GraphicsBuffer ChunkBuffer { get; private set; }
 
-        /// <summary>Quantized SH bytes as a raw buffer, or null for degree 0. Consumed by the renderer in E3.</summary>
-        public GraphicsBuffer ShBuffer { get; private set; }
+        /// <summary>
+        /// Quantized SH bytes as an RGBA8 texture (same trick as the splats: a byte per channel), or null for degree 0.
+        /// Splat i uses texels [i * ShTexelsPerSplat, +ShTexelsPerSplat); byte j of its SH is texel j / 4, channel j % 4.
+        /// </summary>
+        public Texture2D ShTexture { get; private set; }
+
+        /// <summary>Texels per splat in <see cref="ShTexture"/>: 3, 6 or 12 for degrees 1, 2, 3 (9, 24, 45 bytes rounded up to 4).</summary>
+        public int ShTexelsPerSplat { get; private set; }
+
+        /// <summary>Chunk centers as an RGBAFloat texture, one texel per chunk, for the vertex shader (uniform arrays would hit GLES 3.0 limits).</summary>
+        public Texture2D ChunkCenterTexture { get; private set; }
 
         /// <summary>Chunks whose texels are already on the GPU: [0, UploadedChunkCount).</summary>
         public int UploadedChunkCount { get; private set; }
@@ -42,7 +51,8 @@ namespace GSplat
         public bool IsFullyUploaded => UploadedChunkCount == ChunkCount;
 
         /// <summary>Approximate GPU memory held by this object, for the memory budget (E6-T4).</summary>
-        public long GpuMemoryBytes => (long)SplatTexture.width * SplatTexture.height * 4 + (long)ChunkBuffer.count * ChunkBuffer.stride + (ShBuffer != null ? (long)ShBuffer.count * ShBuffer.stride : 0);
+        public long GpuMemoryBytes => (long)SplatTexture.width * SplatTexture.height * 4 + (long)ChunkBuffer.count * ChunkBuffer.stride
+            + (ShTexture != null ? (long)ShTexture.width * ShTexture.height * 4 : 0) + (long)ChunkCenterTexture.width * 16;
 
         private readonly GsplatData source;
         private readonly bool canCopyRegions;
@@ -85,17 +95,53 @@ namespace GSplat
             ChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, ChunkCount), 48) { name = "GSplat Chunks" };
             if (ChunkCount > 0) ChunkBuffer.SetData(data.Chunks);
 
+            ChunkCenterTexture = new Texture2D(math.max(1, ChunkCount), 1, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.None)
+            {
+                name = "GSplat Chunk Centers",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            NativeArray<float4> centers = ChunkCenterTexture.GetPixelData<float4>(0);
+            for (int chunkIndex = 0; chunkIndex < ChunkCount; chunkIndex++) centers[chunkIndex] = new float4(data.Chunks[chunkIndex].Center, 0f);
+            ChunkCenterTexture.Apply(false, true);
+
             if (data.Sh.Length > 0)
             {
-                // Raw buffer of bytes packed 4 per uint; the shader unpacks with byte offsets. Padded to a whole
-                // number of uints because a raw buffer cannot take a byte count that is not a multiple of 4.
-                int uintCount = (data.Sh.Length + 3) / 4;
-                ShBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Raw, uintCount, 4) { name = "GSplat SH" };
-                var padded = new NativeArray<byte>(uintCount * 4, Allocator.Temp, NativeArrayOptions.ClearMemory);
-                NativeArray<byte>.Copy(data.Sh, padded, data.Sh.Length);
-                ShBuffer.SetData(padded.Reinterpret<uint>(1));
-                padded.Dispose();
+                CreateShTexture(data);
             }
+        }
+
+        private void CreateShTexture(GsplatData data)
+        {
+            ShTexelsPerSplat = (data.ShBytesPerSplat + 3) / 4;
+            long texelCount = (long)SplatCount * ShTexelsPerSplat;
+            int rows = (int)((texelCount + TextureWidth - 1) / TextureWidth);
+            if (rows > 4096)
+            {
+                // 4096 x 4096 texels = 1.39M splats at degree 3, 2.8M at degree 2. Above that the SH is simply not loaded.
+                // TODO: a second SH texture would lift the limit; decide once a real scene needs it.
+                Debug.LogWarning($"GSplat: {SplatCount:N0} splats at SH degree {ShDegree} do not fit one SH texture; rendering without view-dependent color.");
+                ShTexelsPerSplat = 0;
+                return;
+            }
+
+            ShTexture = new Texture2D(TextureWidth, rows, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None)
+            {
+                name = "GSplat SH",
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            // Per splat: ShBytesPerSplat bytes, then padding up to a whole texel. A straight copy works when the byte
+            // count is already a multiple of 4 (degree 2: 24 bytes); degrees 1 and 3 (9 and 45) need the per-splat gap.
+            NativeArray<byte> texels = ShTexture.GetPixelData<byte>(0);
+            int strideBytes = ShTexelsPerSplat * 4;
+            for (int splatIndex = 0; splatIndex < SplatCount; splatIndex++)
+            {
+                NativeArray<byte>.Copy(data.Sh, splatIndex * data.ShBytesPerSplat, texels, splatIndex * strideBytes, data.ShBytesPerSplat);
+            }
+
+            ShTexture.Apply(false, true);
         }
 
         /// <summary>
@@ -165,10 +211,10 @@ namespace GSplat
         {
             if (SplatTexture != null) { UnityEngine.Object.Destroy(SplatTexture); SplatTexture = null; }
             if (stagingTexture != null) { UnityEngine.Object.Destroy(stagingTexture); stagingTexture = null; }
+            if (ShTexture != null) { UnityEngine.Object.Destroy(ShTexture); ShTexture = null; }
+            if (ChunkCenterTexture != null) { UnityEngine.Object.Destroy(ChunkCenterTexture); ChunkCenterTexture = null; }
             ChunkBuffer?.Dispose();
             ChunkBuffer = null;
-            ShBuffer?.Dispose();
-            ShBuffer = null;
         }
     }
 }
