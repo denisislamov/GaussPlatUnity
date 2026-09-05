@@ -51,3 +51,9 @@ crashlytics-build.properties
 /TestResults/
 /BenchmarkResults/
 /.utmp/
+
+# Internal notes and plans stay local
+/docs/
+# InnerTest exports are for internal testing only; their license does not allow redistribution here
+/Assets/Samples/InnerTest/
+/Assets/Samples/InnerTest.meta
