@@ -8,18 +8,31 @@ using UnityEngine;
 namespace GSplat
 {
     /// <summary>
-    /// Decodes a Niantic .spz file (versions 1-3) into a <see cref="SplatCloud"/>. The body is one gzip
-    /// stream holding, per attribute, all points in a row: positions, alphas, colors, scales, rotations, SH.
-    /// Version 4 (zstd streams) is recognised but not decoded yet, see <see cref="Decode"/>.
+    /// Decodes a Niantic .spz file (versions 1-3) into a <see cref="SplatCloud"/>. The whole file - 16-byte header
+    /// and then, per attribute, all points in a row (positions, alphas, colors, scales, rotations, SH) - is one gzip
+    /// stream; the reference writer gzips header and body together. Version 4 keeps its 32-byte header in plain
+    /// text and uses zstd streams; it is recognised but not decoded yet, see <see cref="Decode"/>.
     /// Positions come out in the file's own coordinate system; convert with <see cref="CoordinateConverter"/>.
     /// </summary>
     public static class SpzReader
     {
-        /// <summary>Reads only the header, so the caller can allocate before decoding (possibly on another thread).</summary>
+        /// <summary>Gzip files start with these two bytes; a plain-text header means version 4 (or a broken file).</summary>
+        public static bool IsGzip(byte[] bytes)
+        {
+            return bytes != null && bytes.Length >= 2 && bytes[0] == 0x1F && bytes[1] == 0x8B;
+        }
+
+        /// <summary>
+        /// Reads only the header, so the caller can allocate before decoding (possibly on another thread). For the
+        /// gzip versions only the first 16 bytes are inflated, which is cheap even for a 30 MB file.
+        /// </summary>
         public static SpzHeader ReadHeader(byte[] bytes)
         {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
-            return SpzHeader.Parse(bytes);
+            if (!IsGzip(bytes)) return SpzHeader.Parse(bytes);
+
+            byte[] headerBytes = Decompress(bytes, 0, SpzHeader.LegacyHeaderSize, "header");
+            return SpzHeader.Parse(headerBytes);
         }
 
         /// <summary>Header + decode in one call, for callers that do not care about threads.</summary>
@@ -62,15 +75,21 @@ namespace GSplat
                     $"SPZ version {header.Version} uses zstd compression, which this build cannot decode yet. Re-export the file as SPZ version 3 or use PLY.");
             }
 
+            if (!IsGzip(bytes))
+            {
+                throw new SpzException(SpzError.CorruptedCompression, $"SPZ version {header.Version} must be a gzip stream, but the file does not start with the gzip signature.");
+            }
+
             int fileShCoefficients = ShMath.CoefficientCount(header.ShDegree);
             long bodySize = (long)header.PointCount * (header.PositionBytes + 1 + 3 + 3 + header.RotationBytes + fileShCoefficients * 3);
-            if (bodySize > int.MaxValue)
+            if (bodySize + SpzHeader.LegacyHeaderSize > int.MaxValue)
             {
                 throw new SpzException(SpzError.TooManyPoints, $"The decompressed SPZ body would be {bodySize} bytes.");
             }
 
-            byte[] body = Decompress(bytes, header.HeaderSize, (int)bodySize);
-            int offset = 0;
+            // The header is inside the gzip stream too; the body starts right after it.
+            byte[] body = Decompress(bytes, 0, SpzHeader.LegacyHeaderSize + (int)bodySize, "body");
+            int offset = SpzHeader.LegacyHeaderSize;
             offset = DecodePositions(body, offset, header, cloud);
             offset = DecodeAlphas(body, offset, cloud);
             offset = DecodeColors(body, offset, cloud);
@@ -79,7 +98,8 @@ namespace GSplat
             DecodeSh(body, offset, fileShCoefficients, cloud);
         }
 
-        private static byte[] Decompress(byte[] bytes, int offset, int expectedSize)
+        /// <summary>Inflates exactly <paramref name="expectedSize"/> bytes starting at <paramref name="offset"/> of the file.</summary>
+        private static byte[] Decompress(byte[] bytes, int offset, int expectedSize, string what)
         {
             var result = new byte[expectedSize];
             try
@@ -98,7 +118,7 @@ namespace GSplat
                     if (total < expectedSize)
                     {
                         throw new SpzException(SpzError.TruncatedPayload,
-                            $"The SPZ body decompressed to {total} bytes but {expectedSize} were expected. The file is probably cut off.");
+                            $"The SPZ {what} decompressed to {total} bytes but {expectedSize} were expected. The file is probably cut off.");
                     }
 
                     // Extension data may follow the body when FlagHasExtensions is set; we do not read it.

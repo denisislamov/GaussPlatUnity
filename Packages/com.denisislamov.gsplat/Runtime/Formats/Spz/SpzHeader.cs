@@ -4,9 +4,10 @@ using System.Buffers.Binary;
 namespace GSplat
 {
     /// <summary>
-    /// Header of a Niantic .spz file (https://github.com/nianticlabs/spz). Versions 1-3 use a 16-byte header
-    /// followed by one gzip stream; version 4 uses a 32-byte header, optional extension bytes, a table of
-    /// contents and one zstd stream per attribute. All integers are little-endian.
+    /// Header of a Niantic .spz file (https://github.com/nianticlabs/spz). Versions 1-3: a 16-byte header and the
+    /// body, gzip-compressed together (the file on disk starts with the gzip signature, not with the magic);
+    /// version 4: a plain-text 32-byte header, optional extension bytes, a table of contents and one zstd stream
+    /// per attribute. All integers are little-endian.
     /// </summary>
     public readonly struct SpzHeader
     {

@@ -166,7 +166,7 @@ namespace GSplat
             if (statusText == null) return;
             switch (state)
             {
-                case WorldLoadState.Idle: statusText.text = ""; break;
+                case WorldLoadState.Idle: statusText.text = "No world set. Put a descriptor .json or a .spz URL into World Url on the World object."; break;
                 case WorldLoadState.LoadingDescriptor: statusText.text = "Loading world…"; break;
                 case WorldLoadState.LoadingFirstLevel: statusText.text = "Loading preview…"; break;
                 case WorldLoadState.ShowingFirstLevel: statusText.text = "Preview"; break;

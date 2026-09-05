@@ -2,7 +2,7 @@ using UnityEditor.AssetImporters;
 
 namespace GSplat.Editor
 {
-    [ScriptedImporter(1, "ply")]
+    [ScriptedImporter(2, "ply")]
     public sealed class PlyImporter : SplatImporterBase
     {
         protected override SplatCoordinateSystem DefaultCoordinateSystem => SplatCoordinateSystem.Rdf;

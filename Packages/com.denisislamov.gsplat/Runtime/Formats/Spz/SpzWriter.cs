@@ -6,9 +6,9 @@ using Unity.Mathematics;
 namespace GSplat
 {
     /// <summary>
-    /// Encodes a <see cref="SplatCloud"/> as SPZ version 3 (gzip body, smallest-three rotations). Used by the
-    /// tests to round-trip the reader and by editor tooling to re-export; positions are written in whatever
-    /// coordinate system the cloud currently holds.
+    /// Encodes a <see cref="SplatCloud"/> as SPZ version 3 (header + body in one gzip stream, smallest-three
+    /// rotations), the way the reference writer does. Used by the tests to round-trip the reader and by editor
+    /// tooling to re-export; positions are written in whatever coordinate system the cloud currently holds.
     /// </summary>
     public static class SpzWriter
     {
@@ -75,9 +75,9 @@ namespace GSplat
             {
                 var headerBytes = new byte[SpzHeader.LegacyHeaderSize];
                 header.WriteLegacy(headerBytes);
-                output.Write(headerBytes, 0, headerBytes.Length);
                 using (var gzip = new GZipStream(output, CompressionLevel.Optimal, true))
                 {
+                    gzip.Write(headerBytes, 0, headerBytes.Length);
                     gzip.Write(body, 0, body.Length);
                 }
 

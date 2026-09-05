@@ -73,10 +73,13 @@ namespace GSplat.Tests
         public void BrokenFileLogsAnImportErrorInsteadOfThrowing()
         {
             string path = Folder + "/broken.spz";
-            byte[] bytes = new byte[64];
-            System.BitConverter.GetBytes(SpzHeader.Magic).CopyTo(bytes, 0);
-            System.BitConverter.GetBytes(2u).CopyTo(bytes, 4);
-            System.BitConverter.GetBytes(10u).CopyTo(bytes, 8);
+            byte[] bytes;
+            using (SplatCloud cloud = TestClouds.Random(50, 0))
+            {
+                bytes = SpzWriter.Write(cloud);
+            }
+
+            for (int byteIndex = 20; byteIndex < bytes.Length; byteIndex++) bytes[byteIndex] = 0x5A; // gzip signature intact, stream garbage
             File.WriteAllBytes(path, bytes);
 
             UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("Could not import broken.spz"));

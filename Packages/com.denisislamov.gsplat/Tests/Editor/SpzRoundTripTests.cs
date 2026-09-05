@@ -65,10 +65,11 @@ namespace GSplat.Tests
         [Test]
         public void GarbageBodyIsReportedAsCorrupted()
         {
-            using (SplatCloud original = TestClouds.Random(10, 0))
+            using (SplatCloud original = TestClouds.Random(5000, 0))
             {
                 byte[] bytes = SpzWriter.Write(original);
-                for (int byteIndex = SpzHeader.LegacyHeaderSize; byteIndex < bytes.Length; byteIndex++) bytes[byteIndex] = 0xAB;
+                // Keep the gzip signature and the first deflate bytes (they carry the 16-byte header), wreck the rest.
+                for (int byteIndex = 40; byteIndex < bytes.Length; byteIndex++) bytes[byteIndex] = 0xAB;
 
                 SpzException e = Assert.Throws<SpzException>(() => SpzReader.Read(bytes));
                 Assert.That(e.Code, Is.EqualTo(SpzError.CorruptedCompression).Or.EqualTo(SpzError.TruncatedPayload));
