@@ -1,0 +1,95 @@
+// Depth sort of splats on the GPU as a 16-bit counting sort, written for the lowest common denominator:
+// no wave/subgroup intrinsics (that is what ties gsplat-unity to D3D12/Metal/Vulkan), thread groups of 128
+// (the OpenGL ES 3.1 minimum) and only groupshared memory + InterlockedAdd. Four kernels, run in order:
+//   ClearHistogram -> ComputeKeys -> PrefixSum -> Scatter
+// Ascending key = back to front (see SplatSortKeys.cs, which the CPU sorter shares).
+
+#pragma kernel ClearHistogram
+#pragma kernel ComputeKeys
+#pragma kernel PrefixSum
+#pragma kernel Scatter
+
+#define BUCKET_COUNT 65536
+#define MAX_KEY 65535
+#define THREADS 128
+#define BUCKETS_PER_THREAD (BUCKET_COUNT / THREADS) // 512
+
+StructuredBuffer<float4> _Positions;      // xyz = splat position, w unused (float4 for 16-byte alignment)
+RWStructuredBuffer<uint> _Keys;           // per splat, 0..65535
+RWStructuredBuffer<uint> _Histogram;      // per bucket: count after ComputeKeys, first output slot after PrefixSum
+RWStructuredBuffer<uint> _Order;          // per slot: splat index, back to front
+
+uint _SplatCount;
+float3 _CameraPosition;
+float3 _CameraForward;
+float _MinDepth;
+float _InverseDepthRange;
+
+[numthreads(THREADS, 1, 1)]
+void ClearHistogram(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x < BUCKET_COUNT) _Histogram[id.x] = 0;
+}
+
+[numthreads(THREADS, 1, 1)]
+void ComputeKeys(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _SplatCount) return;
+
+    float depth = dot(_Positions[id.x].xyz - _CameraPosition, _CameraForward);
+    float normalized = saturate((depth - _MinDepth) * _InverseDepthRange);
+    uint key = MAX_KEY - (uint)(normalized * MAX_KEY + 0.5);
+    _Keys[id.x] = key;
+    InterlockedAdd(_Histogram[key], 1);
+}
+
+// One thread group turns the histogram into an exclusive prefix sum. Each thread owns 512 consecutive
+// buckets: it sums them, the 128 partial sums are scanned in groupshared memory (Hillis-Steele, 7 steps),
+// then each thread writes the running offsets of its 512 buckets. ~1500 memory operations per thread on a
+// single group is a compromise: it is short in absolute terms (tens of microseconds) and needs no
+// second dispatch or wave intrinsics.
+groupshared uint partialSums[THREADS];
+
+[numthreads(THREADS, 1, 1)]
+void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
+{
+    uint thread = groupThreadId.x;
+    uint firstBucket = thread * BUCKETS_PER_THREAD;
+
+    uint sum = 0;
+    for (uint bucket = 0; bucket < BUCKETS_PER_THREAD; bucket++)
+    {
+        sum += _Histogram[firstBucket + bucket];
+    }
+    partialSums[thread] = sum;
+    GroupMemoryBarrierWithGroupSync();
+
+    // Inclusive scan of the 128 partial sums.
+    for (uint stride = 1; stride < THREADS; stride <<= 1)
+    {
+        uint addend = thread >= stride ? partialSums[thread - stride] : 0;
+        GroupMemoryBarrierWithGroupSync();
+        partialSums[thread] += addend;
+        GroupMemoryBarrierWithGroupSync();
+    }
+
+    // Exclusive offset of this thread's first bucket = inclusive sum of the previous thread.
+    uint running = thread > 0 ? partialSums[thread - 1] : 0;
+    for (uint bucket = 0; bucket < BUCKETS_PER_THREAD; bucket++)
+    {
+        uint count = _Histogram[firstBucket + bucket];
+        _Histogram[firstBucket + bucket] = running;
+        running += count;
+    }
+}
+
+[numthreads(THREADS, 1, 1)]
+void Scatter(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _SplatCount) return;
+
+    uint slot;
+    InterlockedAdd(_Histogram[_Keys[id.x]], 1, slot);
+    // Splats with equal keys land in arbitrary order; they are at the same quantized depth, so it does not matter.
+    _Order[slot] = id.x;
+}

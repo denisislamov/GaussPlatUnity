@@ -1,0 +1,14 @@
+{
+  "name": "com.denisislamov.gsplat",
+  "version": "0.1.0",
+  "displayName": "GSplat",
+  "description": "Gaussian Splat renderer for Unity: URP-compatible, mobile and web first. Reads SPZ and PLY.",
+  "unity": "6000.3",
+  "dependencies": {
+    "com.unity.burst": "1.8.29",
+    "com.unity.collections": "2.6.6",
+    "com.unity.mathematics": "1.3.3",
+    "com.unity.render-pipelines.universal": "17.3.0"
+  },
+  "author": { "name": "Denis Islamov" }
+}

@@ -1,0 +1,55 @@
+# Кодирует раздел 1.6 ТЗ (docs/GSplat-Unity-TZ.md): читаемый код для junior/middle.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,asmdef,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Скобки Allman: каждая "{" на новой строке (как в остальных проектах команды).
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_prefer_braces = when_multiline:warning
+# Явные типы у локальных переменных, var только когда тип очевиден из "new ...".
+csharp_style_var_for_built_in_types = false:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:warning
+# Никаких file-scoped namespace, expression-bodied методов ради краткости и т.п.
+csharp_style_namespace_declarations = block_scoped:warning
+csharp_style_expression_bodied_methods = false:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_using_directive_placement = outside_namespace:warning
+dotnet_sort_system_directives_first = true
+# Именование
+dotnet_naming_rule.private_fields_camel.severity = warning
+dotnet_naming_rule.private_fields_camel.symbols = private_fields
+dotnet_naming_rule.private_fields_camel.style = camel_case
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.camel_case.capitalization = camel_case
+dotnet_naming_rule.constants_pascal.severity = warning
+dotnet_naming_rule.constants_pascal.symbols = constants
+dotnet_naming_rule.constants_pascal.style = pascal_case
+dotnet_naming_symbols.constants.applicable_kinds = field
+dotnet_naming_symbols.constants.required_modifiers = const
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+# Пустой catch и проглатывание исключений запрещены (раздел 1.6).
+dotnet_diagnostic.CA1031.severity = warning
+dotnet_diagnostic.CS0168.severity = warning
+# Публичные типы и методы документируются.
+dotnet_diagnostic.CS1591.severity = suggestion
+
+[*.{shader,hlsl,compute,cginc}]
+indent_size = 4
