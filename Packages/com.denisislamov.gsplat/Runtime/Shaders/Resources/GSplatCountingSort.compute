@@ -12,7 +12,7 @@
 #pragma kernel PrefixSum
 #pragma kernel Scatter
 
-#include "../GSplatPacked.hlsl"
+#include "../GSplatCore.hlsl"
 
 #define BUCKET_COUNT 65536
 #define MAX_KEY 65535
@@ -35,12 +35,18 @@ StructuredBuffer<uint> _VisibleChunks;
 RWStructuredBuffer<uint> _Keys;           // per slot: 0..65535 or EMPTY_KEY
 RWStructuredBuffer<uint> _Histogram;      // per bucket: count after ComputeKeys, first output slot after PrefixSum
 RWTexture2D<float4> _Order;               // RGBA8: slot -> splat index as 4 bytes
+RWStructuredBuffer<uint> _DrawArgs;       // indirect draw args; [1] = instance count = splats that got a slot
 
 uint _SlotCount;                          // visible chunks x 65536
 float3 _CameraPosition;                   // in the splat object's local space
 float3 _CameraForward;
 float _MinDepth;
 float _InverseDepthRange;
+int _CullInKeys;                          // 1 = skip splats that cannot produce pixels (SplatVisibility.cs twin below)
+float4x4 _LocalToClip;
+float _FocalPixelsY;
+float _MaxStdDev;
+float _MinPixelRadius;
 
 uint SplatIndexOfSlot(uint slot)
 {
@@ -71,7 +77,14 @@ void ComputeKeys(uint3 id : SV_DispatchThreadID)
     uint splatIndex = chunkIndex * CHUNK_SIZE + local;
     GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
     float3 center = (chunk.boundsMin.xyz + chunk.boundsMax.xyz) * 0.5;
-    float depth = dot(s.position + center - _CameraPosition, _CameraForward);
+    float3 position = s.position + center;
+    if (_CullInKeys != 0 && !GSplatKeyPassVisible(position, s.scale, _LocalToClip, _FocalPixelsY, _MaxStdDev, _MinPixelRadius))
+    {
+        _Keys[slot] = EMPTY_KEY;
+        return;
+    }
+
+    float depth = dot(position - _CameraPosition, _CameraForward);
     float normalized = saturate((depth - _MinDepth) * _InverseDepthRange);
     uint key = MAX_KEY - (uint)(normalized * MAX_KEY + 0.5);
     _Keys[slot] = key;
@@ -114,6 +127,9 @@ void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
         _Histogram[firstBucket + bucket] = running;
         running += count;
     }
+
+    // The last thread ends with the grand total = number of splats that got a slot = instances to draw.
+    if (thread == THREADS - 1) _DrawArgs[1] = running;
 }
 
 [numthreads(THREADS, 1, 1)]

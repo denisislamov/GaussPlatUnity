@@ -120,6 +120,20 @@ float3 GSplatEvaluateSh(Texture2D<float4> shTexture, uint splatIndex, uint texel
     return result;
 }
 
+// Twin of SplatVisibility.IsVisible (C#): can this splat produce any pixel? Behind the camera, off screen or with
+// an own radius (largest half-axis projected, before the 0.3 px dilation) below the threshold -> no.
+bool GSplatKeyPassVisible(float3 positionLocal, float3 scale, float4x4 localToClip, float focalPixelsY, float maxStdDev, float minPixelRadius)
+{
+    float4 clip = mul(localToClip, float4(positionLocal, 1.0));
+    if (clip.w <= 1e-4) return false;
+
+    float radiusPixels = maxStdDev * max(scale.x, max(scale.y, scale.z)) * focalPixelsY / clip.w;
+    if (radiusPixels < minPixelRadius) return false;
+
+    float2 ndc = clip.xy / clip.w;
+    return all(abs(ndc) <= 1.3);
+}
+
 // Debug colour for chunk index visualisation: a cheap hash to a hue.
 float3 GSplatChunkDebugColor(uint chunkIndex)
 {

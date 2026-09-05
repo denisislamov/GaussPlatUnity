@@ -24,13 +24,14 @@ namespace GSplat
         private NativeArray<uint> order;
         private NativeArray<int> histogram;
         private NativeArray<int> visibleChunksCopy;
+        private NativeArray<int> sortedCount;
         private JobHandle pendingJob;
         private bool jobInFlight;
-        private int pendingCount;
 
         public Texture OrderTexture => orderTexture;
         public int OrderedSplatCount { get; private set; }
         public bool NeedsCompute => false;
+        public UnityEngine.ComputeBuffer DrawArgs => null;
 
         /// <summary>True while a sort is scheduled and not yet collected; useful for the debug overlay.</summary>
         public bool IsSorting => jobInFlight;
@@ -49,6 +50,7 @@ namespace GSplat
             keys = new NativeArray<uint>(capacity, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             order = new NativeArray<uint>(capacity, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             histogram = new NativeArray<int>(SplatSortKeys.BucketCount, Allocator.Persistent);
+            sortedCount = new NativeArray<int>(1, Allocator.Persistent);
         }
 
         public void PrepareOnMainThread(in SplatSortInput input, bool resort)
@@ -98,6 +100,11 @@ namespace GSplat
                 CameraForward = input.CameraForwardLocal,
                 MinDepth = input.MinDepth,
                 InverseDepthRange = 1f / math.max(input.MaxDepth - input.MinDepth, 1e-6f),
+                CullInKeys = input.CullInKeys,
+                LocalToClip = input.LocalToClip,
+                FocalPixelsY = input.FocalPixelsY,
+                MaxStdDev = input.MaxStdDev,
+                MinPixelRadius = input.MinPixelRadius,
                 Keys = keys
             };
             JobHandle keyHandle = keyJob.Schedule(slotCount, 8192);
@@ -108,10 +115,10 @@ namespace GSplat
                 SlotCount = slotCount,
                 VisibleChunks = visibleChunksCopy,
                 Histogram = histogram,
-                Order = order
+                Order = order,
+                SortedCount = sortedCount
             };
             pendingJob = sortJob.Schedule(keyHandle);
-            pendingCount = input.VisibleSplatCount;
             jobInFlight = true;
             JobHandle.ScheduleBatchedJobs();
         }
@@ -122,10 +129,11 @@ namespace GSplat
             jobInFlight = false;
 
             // The texture stores one uint per RGBA8 texel, so the order array is the texel array (little-endian: byte 0 -> R).
+            int count = sortedCount[0];
             NativeArray<uint> texels = orderTexture.GetPixelData<uint>(0);
-            NativeArray<uint>.Copy(order, 0, texels, 0, pendingCount);
+            NativeArray<uint>.Copy(order, 0, texels, 0, count);
             orderTexture.Apply(false, false);
-            OrderedSplatCount = pendingCount;
+            OrderedSplatCount = count;
         }
 
         public void Dispose()
@@ -136,6 +144,7 @@ namespace GSplat
             if (order.IsCreated) order.Dispose();
             if (histogram.IsCreated) histogram.Dispose();
             if (visibleChunksCopy.IsCreated) visibleChunksCopy.Dispose();
+            if (sortedCount.IsCreated) sortedCount.Dispose();
             if (orderTexture != null)
             {
                 SplatObjectUtility.Destroy(orderTexture);
@@ -154,6 +163,11 @@ namespace GSplat
             public float3 CameraForward;
             public float MinDepth;
             public float InverseDepthRange;
+            public bool CullInKeys;
+            public float4x4 LocalToClip;
+            public float FocalPixelsY;
+            public float MaxStdDev;
+            public float MinPixelRadius;
             [WriteOnly] public NativeArray<uint> Keys;
 
             public void Execute(int slot)
@@ -168,8 +182,15 @@ namespace GSplat
                 }
 
                 int splatIndex = chunkIndex * SplatChunkInfo.Size + local;
-                PackedSplat.Unpack(Packed[splatIndex], out float3 relative, out _, out _, out _, out _);
-                float depth = SplatSortKeys.ViewDepth(relative + chunk.Center, CameraPosition, CameraForward);
+                PackedSplat.Unpack(Packed[splatIndex], out float3 relative, out float3 logScale, out _, out _, out _);
+                float3 position = relative + chunk.Center;
+                if (CullInKeys && !SplatVisibility.IsVisible(position, math.exp(logScale), LocalToClip, FocalPixelsY, MaxStdDev, MinPixelRadius))
+                {
+                    Keys[slot] = SplatSortKeys.EmptyKey;
+                    return;
+                }
+
+                float depth = SplatSortKeys.ViewDepth(position, CameraPosition, CameraForward);
                 Keys[slot] = SplatSortKeys.DepthToKey(depth, MinDepth, InverseDepthRange);
             }
         }
@@ -182,6 +203,7 @@ namespace GSplat
             [ReadOnly] public NativeArray<int> VisibleChunks;
             public NativeArray<int> Histogram;
             [WriteOnly] public NativeArray<uint> Order;
+            [WriteOnly] public NativeArray<int> SortedCount;
 
             public void Execute()
             {
@@ -200,6 +222,8 @@ namespace GSplat
                     Histogram[bucket] = runningTotal;
                     runningTotal += bucketCount;
                 }
+
+                SortedCount[0] = runningTotal;
 
                 for (int slot = 0; slot < SlotCount; slot++)
                 {

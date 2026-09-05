@@ -16,8 +16,17 @@ namespace GSplat
         /// <summary>The order texture. Its content is valid for the first <see cref="OrderedSplatCount"/> slots.</summary>
         Texture OrderTexture { get; }
 
-        /// <summary>Slots that hold a valid order; the renderer draws exactly this many instances.</summary>
+        /// <summary>
+        /// Slots that hold a valid order. The CPU sorter knows the exact count; the GPU sorter only knows an upper
+        /// bound here (the exact count is in <see cref="DrawArgs"/>, on the GPU).
+        /// </summary>
         int OrderedSplatCount { get; }
+
+        /// <summary>
+        /// GPU sorter: indirect draw arguments (6 indices, instanceCount written by the sort, 0, 0, 0) so the draw
+        /// covers exactly the splats that got a slot without a CPU round trip. Null for the CPU sorter.
+        /// </summary>
+        ComputeBuffer DrawArgs { get; }
 
         /// <summary>True when <see cref="RecordCompute"/> must run before drawing (GPU sorter).</summary>
         bool NeedsCompute { get; }

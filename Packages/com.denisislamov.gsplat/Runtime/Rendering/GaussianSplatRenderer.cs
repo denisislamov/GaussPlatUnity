@@ -44,8 +44,8 @@ namespace GSplat
         [SerializeField, Range(0, ShMath.MaxDegree), Tooltip("View-dependent color detail. Capped by what the data contains; 0 on mobile.")]
         private int shDegree = ShMath.MaxDegree;
 
-        [SerializeField, Range(0f, 2f), Tooltip("Splats smaller than this many pixels are skipped. 0 draws everything; 0.5 removes invisible dust.")]
-        private float minPixelRadius = 0.3f;
+        [SerializeField, Range(0f, 3f), Tooltip("Splats whose own radius (largest axis, before the 0.3 px anti-aliasing dilation) projects below this many pixels are skipped. 0 draws everything. Hundreds of thousands of sub-pixel quads are what makes tile-based GPUs slow, so 0.5 is a good default; raise it on weak phones.")]
+        private float minPixelRadius = 0.5f;
 
         [Header("Look")]
         [SerializeField, Range(0f, 2f)] private float brightness = 1f;
@@ -104,7 +104,10 @@ namespace GSplat
         public bool HasData => data != null && gpu != null;
         public int SplatCount => data != null ? data.SplatCount : 0;
 
-        /// <summary>Splats that were visible and drawn for the last prepared camera.</summary>
+        /// <summary>
+        /// Splats drawn for the last prepared camera. Exact with the CPU sorter; with the GPU sorter it is the number of
+        /// candidates (visible chunks), the exact count stays on the GPU in the indirect arguments.
+        /// </summary>
         public int LastDrawnSplatCount { get; private set; }
         public int LastVisibleChunkCount => lastVisibleChunkCount;
 
@@ -322,6 +325,8 @@ namespace GSplat
             }
 
             SplatSortKeys.DepthRange(data.Chunks, visible, cameraPositionLocal, cameraForwardLocal, out float minDepth, out float maxDepth);
+            // Per-splat culling in the key pass needs the projection; it assumes a perspective camera (w = depth).
+            Matrix4x4 projection = camera.projectionMatrix;
             var input = new SplatSortInput
             {
                 Data = data,
@@ -332,7 +337,12 @@ namespace GSplat
                 CameraPositionLocal = cameraPositionLocal,
                 CameraForwardLocal = cameraForwardLocal,
                 MinDepth = minDepth,
-                MaxDepth = maxDepth
+                MaxDepth = maxDepth,
+                CullInKeys = !camera.orthographic,
+                LocalToClip = projection * camera.worldToCameraMatrix * localToWorld,
+                FocalPixelsY = Mathf.Abs(projection.m11) * camera.pixelHeight * 0.5f,
+                MaxStdDev = maxStdDev,
+                MinPixelRadius = minPixelRadius
             };
 
             // The GPU sorter re-sorts for every camera that draws (its order texture is shared), so with two cameras
@@ -353,6 +363,7 @@ namespace GSplat
                 LocalToWorld = localToWorld,
                 Properties = properties,
                 InstanceCount = sorter.OrderedSplatCount,
+                DrawArgs = sorter.DrawArgs,
                 DistanceToCamera = Vector3.Distance(camera.transform.position, WorldBounds.center)
             };
             return true;

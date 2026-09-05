@@ -42,14 +42,15 @@ Shader "GSplat/Splat"
                 int _Antialiased;        // 1 = scene trained with mip-splatting: compensate alpha for the 0.3 px dilation
                 int _SrgbInput;          // 1 = splat colors are sRGB and must become linear before blending (linear projects)
                 int _DebugMode;          // 0 normal, 1 chunk colors, 2 overdraw heat, 3 ellipse outlines
-                float _MinPixelRadius;   // splats smaller than this are skipped (sub-pixel cull)
+                float _MinPixelRadius;   // splats whose own radius (before dilation) is below this are skipped
             CBUFFER_END
 
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float2 local : TEXCOORD0;      // quad position in standard deviations
-                float4 color : TEXCOORD1;      // rgb linear, a = opacity incl. compensation
+                // half precision: fewer bytes per vertex through the tiler, which is the bottleneck with many splats
+                half2 local : TEXCOORD0;       // quad position in standard deviations
+                half4 color : TEXCOORD1;       // rgb linear, a = opacity incl. compensation
             };
 
             // A quad no rasterizer will draw: all four corners at the same point behind the camera.
@@ -89,6 +90,11 @@ Shader "GSplat/Splat"
                 // mip-splatting data the opacity is scaled down to keep the total energy (Yu et al. 2023, eq. 7);
                 // classic 3DGS data was trained with the dilation and no compensation, so we reproduce that.
                 float detBefore = cov.x * cov.z - cov.y * cov.y;
+                // Own radius (largest eigenvalue before dilation): below the threshold the splat is skipped. The
+                // key pass already dropped most of these with a looser bound; this is the exact check.
+                float midBefore = 0.5 * (cov.x + cov.z);
+                float lambdaBefore = midBefore + sqrt(max(midBefore * midBefore - detBefore, 0.0));
+                if (_MaxStdDev * sqrt(lambdaBefore) < _MinPixelRadius) return Culled();
                 cov.x += 0.3;
                 cov.z += 0.3;
                 float detAfter = cov.x * cov.z - cov.y * cov.y;
@@ -99,7 +105,6 @@ Shader "GSplat/Splat"
                 GSplatEllipseAxes(cov, majorAxis, lambdaMajor, lambdaMinor);
                 float radiusMajor = _MaxStdDev * sqrt(lambdaMajor);
                 float radiusMinor = _MaxStdDev * sqrt(lambdaMinor);
-                if (radiusMajor < _MinPixelRadius) return Culled();
 
                 float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
                 float2 minorAxis = float2(-majorAxis.y, majorAxis.x);
@@ -129,8 +134,8 @@ Shader "GSplat/Splat"
 
                 Varyings o;
                 o.positionCS = positionCS;
-                o.local = corner * _MaxStdDev;
-                o.color = float4(color, s.alpha * compensation * _Opacity);
+                o.local = (half2)(corner * _MaxStdDev);
+                o.color = (half4)float4(color, s.alpha * compensation * _Opacity);
                 return o;
             }
 

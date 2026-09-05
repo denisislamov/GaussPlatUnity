@@ -26,6 +26,12 @@ namespace GSplat
         private static readonly int CameraForwardId = Shader.PropertyToID("_CameraForward");
         private static readonly int MinDepthId = Shader.PropertyToID("_MinDepth");
         private static readonly int InverseDepthRangeId = Shader.PropertyToID("_InverseDepthRange");
+        private static readonly int DrawArgsId = Shader.PropertyToID("_DrawArgs");
+        private static readonly int CullInKeysId = Shader.PropertyToID("_CullInKeys");
+        private static readonly int LocalToClipId = Shader.PropertyToID("_LocalToClip");
+        private static readonly int FocalPixelsYId = Shader.PropertyToID("_FocalPixelsY");
+        private static readonly int MaxStdDevId = Shader.PropertyToID("_MaxStdDev");
+        private static readonly int MinPixelRadiusId = Shader.PropertyToID("_MinPixelRadius");
 
         private readonly ComputeShader shader;
         private readonly int clearKernel;
@@ -36,12 +42,14 @@ namespace GSplat
         private RenderTexture orderTexture;
         private GraphicsBuffer keys;
         private GraphicsBuffer histogram;
+        private ComputeBuffer drawArgs;
         private SplatSortInput input;
         private bool hasInput;
 
         public Texture OrderTexture => orderTexture;
         public int OrderedSplatCount { get; private set; }
         public bool NeedsCompute => true;
+        public ComputeBuffer DrawArgs => drawArgs;
 
         public static bool IsSupported => SystemInfo.supportsComputeShaders;
 
@@ -63,6 +71,9 @@ namespace GSplat
             scatterKernel = shader.FindKernel("Scatter");
 
             histogram = new GraphicsBuffer(GraphicsBuffer.Target.Structured, SplatSortKeys.BucketCount, sizeof(uint)) { name = "GSplat Sort Histogram" };
+            // {indexCount, instanceCount, startIndex, baseVertex, startInstance}; the sort fills instanceCount.
+            drawArgs = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments) { name = "GSplat Draw Args" };
+            drawArgs.SetData(new uint[] { 6, 0, 0, 0, 0 });
             // Slots are per visible chunk, so round the capacity up to whole chunks.
             int slotCapacity = SplatChunkInfo.ChunkCountFor(capacity) * SplatChunkInfo.Size;
             keys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, slotCapacity, sizeof(uint)) { name = "GSplat Sort Keys" };
@@ -102,6 +113,11 @@ namespace GSplat
             commands.SetComputeVectorParam(shader, CameraForwardId, (Vector3)input.CameraForwardLocal);
             commands.SetComputeFloatParam(shader, MinDepthId, input.MinDepth);
             commands.SetComputeFloatParam(shader, InverseDepthRangeId, 1f / math.max(input.MaxDepth - input.MinDepth, 1e-6f));
+            commands.SetComputeIntParam(shader, CullInKeysId, input.CullInKeys ? 1 : 0);
+            commands.SetComputeMatrixParam(shader, LocalToClipId, input.LocalToClip);
+            commands.SetComputeFloatParam(shader, FocalPixelsYId, input.FocalPixelsY);
+            commands.SetComputeFloatParam(shader, MaxStdDevId, input.MaxStdDev);
+            commands.SetComputeFloatParam(shader, MinPixelRadiusId, input.MinPixelRadius);
 
             commands.SetComputeBufferParam(shader, clearKernel, HistogramId, histogram);
             commands.DispatchCompute(shader, clearKernel, bucketGroups, 1, 1);
@@ -114,6 +130,7 @@ namespace GSplat
             commands.DispatchCompute(shader, keysKernel, slotGroups, 1, 1);
 
             commands.SetComputeBufferParam(shader, prefixKernel, HistogramId, histogram);
+            commands.SetComputeBufferParam(shader, prefixKernel, DrawArgsId, drawArgs);
             commands.DispatchCompute(shader, prefixKernel, 1, 1, 1);
 
             commands.SetComputeBufferParam(shader, scatterKernel, VisibleChunksId, input.VisibleChunkBuffer);
@@ -131,6 +148,8 @@ namespace GSplat
             keys = null;
             histogram?.Dispose();
             histogram = null;
+            drawArgs?.Dispose();
+            drawArgs = null;
             if (orderTexture != null)
             {
                 orderTexture.Release();

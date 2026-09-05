@@ -125,7 +125,14 @@ namespace GSplat
                     for (int itemIndex = 0; itemIndex < data.Items.Count; itemIndex++)
                     {
                         SplatDrawItem item = data.Items[itemIndex];
-                        context.cmd.DrawProcedural(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
+                        if (item.DrawArgs != null)
+                        {
+                            context.cmd.DrawProceduralIndirect(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, item.DrawArgs, 0, item.Properties);
+                        }
+                        else
+                        {
+                            context.cmd.DrawProcedural(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
+                        }
                     }
                 });
             }
@@ -148,7 +155,8 @@ namespace GSplat
             for (int itemIndex = 0; itemIndex < items.Count; itemIndex++)
             {
                 SplatDrawItem item = items[itemIndex];
-                commands.DrawProcedural(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
+                if (item.DrawArgs != null) commands.DrawProceduralIndirect(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, item.DrawArgs, 0, item.Properties);
+                else commands.DrawProcedural(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
             }
 
             context.ExecuteCommandBuffer(commands);
