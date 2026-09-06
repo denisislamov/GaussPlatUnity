@@ -13,6 +13,12 @@ namespace GSplat
     /// </summary>
     public static class SplatLoader
     {
+        /// <summary>
+        /// P7: put a frame between the build stages (select, order, importance, pack) instead of running them back to
+        /// back. Costs a few frames of latency, saves the long hitch. The settings applier sets it from the debug menu.
+        /// </summary>
+        public static bool StagedBuild { get; set; } = true;
+
         /// <summary>Downloads and builds. Use file:// URLs for local files. Must be awaited from the main thread.</summary>
         public static async Awaitable<GsplatData> LoadAsync(string url, SplatImportOptions options, IProgress<SplatLoadStatus> progress = null, CancellationToken cancellationToken = default)
         {
@@ -49,15 +55,48 @@ namespace GSplat
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 progress?.Report(new SplatLoadStatus(SplatLoadStage.Building, 0f, "Sorting and packing"));
-                // TODO: Build runs Burst jobs synchronously on the main thread; ~100-300 ms for 500k splats. If that shows
-                // as a hitch on phones, split it into per-stage awaits with Awaitable.NextFrameAsync between them.
-                GsplatData data = Wrap(() => GsplatBuilder.Build(cloud, options));
+                GsplatData data = StagedBuild
+                    ? await BuildStagedAsync(cloud, options, progress, cancellationToken)
+                    : Wrap(() => GsplatBuilder.Build(cloud, options));
                 progress?.Report(new SplatLoadStatus(SplatLoadStage.Ready, 1f, "Ready"));
                 return data;
             }
             finally
             {
                 cloud.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// GsplatBuilder.Build with a frame between its stages (P7). Every stage still runs its Burst jobs to completion
+        /// on the main thread (jobs can only be scheduled there), so the worst frame is the longest stage, not the sum.
+        /// </summary>
+        private static async Awaitable<GsplatData> BuildStagedAsync(SplatCloud cloud, SplatImportOptions options, IProgress<SplatLoadStatus> progress, CancellationToken cancellationToken)
+        {
+            NativeArray<int> order = Wrap(() => GsplatBuilder.SelectAndOrder(cloud, options));
+            progress?.Report(new SplatLoadStatus(SplatLoadStage.Building, 0.25f, "Ordering"));
+            await Awaitable.NextFrameAsync(cancellationToken);
+
+            SplatCloud ordered = Wrap(() => GsplatBuilder.Reorder(cloud, order, options));
+            try
+            {
+                progress?.Report(new SplatLoadStatus(SplatLoadStage.Building, 0.5f, "Ordering"));
+                await Awaitable.NextFrameAsync(cancellationToken);
+
+                if (options.OrderChunksByImportance)
+                {
+                    SplatCloud byImportance = Wrap(() => GsplatBuilder.OrderChunksByImportance(ordered, Allocator.TempJob));
+                    ordered.Dispose();
+                    ordered = byImportance;
+                    progress?.Report(new SplatLoadStatus(SplatLoadStage.Building, 0.75f, "Ordering"));
+                    await Awaitable.NextFrameAsync(cancellationToken);
+                }
+
+                return Wrap(() => GsplatBuilder.Pack(ordered, Allocator.Persistent, options.OrderChunksByImportance));
+            }
+            finally
+            {
+                ordered.Dispose();
             }
         }
 
@@ -124,9 +163,24 @@ namespace GSplat
 
             Exception failure = null;
 #if UNITY_WEBGL && !UNITY_EDITOR
-            // The web player has no worker threads unless the build enables Wasm threads; decode inline.
-            // TODO: time-slice the decoders (a few thousand splats per frame) so a 500k file does not freeze the page.
-            try { decode(); } catch (Exception e) { failure = e; }
+            // The web player has no worker threads unless the build enables Wasm threads: decode on the main thread,
+            // one SPZ attribute per frame (P7) so the page keeps responding. PLY decodes in one go (TODO: slice it too).
+            try
+            {
+                if (kind == SplatFileKind.Spz)
+                {
+                    SpzHeader spzHeader = SpzReader.ReadHeader(bytes);
+                    foreach (string step in SpzReader.DecodeInSteps(bytes, spzHeader, cloud))
+                    {
+                        await Awaitable.NextFrameAsync(cancellationToken);
+                    }
+                }
+                else
+                {
+                    decode();
+                }
+            }
+            catch (Exception e) { failure = e; }
 #else
             await Awaitable.BackgroundThreadAsync();
             try

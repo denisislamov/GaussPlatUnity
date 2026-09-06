@@ -18,6 +18,8 @@ namespace GSplat
         private static readonly int SplatsId = Shader.PropertyToID("_Splats");
         private static readonly int ChunksId = Shader.PropertyToID("_Chunks");
         private static readonly int VisibleChunksId = Shader.PropertyToID("_VisibleChunks");
+        private static readonly int ChunkBudgetsId = Shader.PropertyToID("_ChunkBudgets");
+        private static readonly int UseBudgetsId = Shader.PropertyToID("_UseBudgets");
         private static readonly int KeysId = Shader.PropertyToID("_Keys");
         private static readonly int HistogramId = Shader.PropertyToID("_Histogram");
         private static readonly int OrderId = Shader.PropertyToID("_Order");
@@ -36,6 +38,9 @@ namespace GSplat
         private static readonly int MinPixelRadiusId = Shader.PropertyToID("_MinPixelRadius");
 
         private readonly ComputeShader shader;
+        private readonly SplatSorterOptions options;
+        private readonly int bucketCount;
+        private readonly LocalKeyword narrowKeys;
         private readonly int clearKernel;
         private readonly int keysKernel;
         private readonly int prefixKernel;
@@ -44,13 +49,16 @@ namespace GSplat
         private RenderTexture orderTexture;
         private GraphicsBuffer keys;
         private GraphicsBuffer histogram;
+        private GraphicsBuffer emptyBudgets;
         private ComputeBuffer drawArgs;
+        private int indexCount = 6;
         private SplatSortInput input;
         private bool hasInput;
 
         public Texture OrderTexture => orderTexture;
         public int OrderedSplatCount { get; private set; }
         public ComputeBuffer DrawArgs => drawArgs;
+        public SplatSorterOptions Options => options;
 
         public static bool IsSupported => SystemInfo.supportsComputeShaders;
 
@@ -60,21 +68,31 @@ namespace GSplat
             return IsSupported ? Resources.Load<ComputeShader>("GSplatCountingSort") : null;
         }
 
-        public GpuCountingSorter(ComputeShader countingSortShader, int capacity)
+        public GpuCountingSorter(ComputeShader countingSortShader, int capacity) : this(countingSortShader, capacity, SplatSorterOptions.Default(SplatSorterKind.Gpu))
+        {
+        }
+
+        public GpuCountingSorter(ComputeShader countingSortShader, int capacity, SplatSorterOptions sorterOptions)
         {
             shader = countingSortShader ?? throw new ArgumentNullException(nameof(countingSortShader));
             if (!IsSupported) throw new NotSupportedException("This device has no compute shaders; use CpuCountingSorter.");
             if (capacity <= 0) throw new ArgumentOutOfRangeException(nameof(capacity));
+
+            options = sorterOptions;
+            if (options.KeyBits != 16 && options.KeyBits != 12) throw new ArgumentOutOfRangeException(nameof(sorterOptions), "The GPU sorter is compiled for 16-bit and 12-bit keys.");
+            bucketCount = SplatSortKeys.BucketCountFor(options.KeyBits);
+            narrowKeys = new LocalKeyword(shader, "GSPLAT_KEY_BITS_12");
 
             clearKernel = shader.FindKernel("ClearHistogram");
             keysKernel = shader.FindKernel("ComputeKeys");
             prefixKernel = shader.FindKernel("PrefixSum");
             scatterKernel = shader.FindKernel("Scatter");
 
-            histogram = new GraphicsBuffer(GraphicsBuffer.Target.Structured, SplatSortKeys.BucketCount, sizeof(uint)) { name = "GSplat Sort Histogram" };
+            histogram = new GraphicsBuffer(GraphicsBuffer.Target.Structured, bucketCount, sizeof(uint)) { name = "GSplat Sort Histogram" };
+            emptyBudgets = new GraphicsBuffer(GraphicsBuffer.Target.Structured, 1, sizeof(uint)) { name = "GSplat No Budgets" };
             // {indexCount, instanceCount, startIndex, baseVertex, startInstance}; the sort fills instanceCount.
             drawArgs = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments) { name = "GSplat Draw Args" };
-            drawArgs.SetData(new uint[] { 6, 0, 0, 0, 0 });
+            WriteDrawArgs();
             // Slots are per visible chunk, so round the capacity up to whole chunks.
             int slotCapacity = SplatChunkInfo.ChunkCountFor(capacity) * SplatChunkInfo.Size;
             keys = new GraphicsBuffer(GraphicsBuffer.Target.Structured, slotCapacity, sizeof(uint)) { name = "GSplat Sort Keys" };
@@ -88,6 +106,19 @@ namespace GSplat
                 hideFlags = HideFlags.HideAndDontSave
             };
             orderTexture.Create();
+        }
+
+        /// <summary>Indices per instance of the indirect draw: 6 for the quad, 3 for the triangle (P2). The renderer sets it when the mode changes.</summary>
+        public void SetIndexCount(int count)
+        {
+            if (count == indexCount) return;
+            indexCount = count;
+            WriteDrawArgs();
+        }
+
+        private void WriteDrawArgs()
+        {
+            drawArgs.SetData(new uint[] { (uint)indexCount, 0, 0, 0, 0 });
         }
 
         public void Sort(in SplatSortInput sortInput, bool resort)
@@ -107,9 +138,13 @@ namespace GSplat
 
             int slotCount = input.VisibleChunks.Length * SplatChunkInfo.Size;
             int slotGroups = slotCount / Threads;
-            int bucketGroups = SplatSortKeys.BucketCount / Threads;
+            int bucketGroups = bucketCount / Threads;
+            bool useBudgets = input.ChunkBudgetBuffer != null && input.ChunkBudgets.IsCreated && input.ChunkBudgets.Length == input.VisibleChunks.Length;
 
+            // The compute shader object is shared by every sorter; the keyword is set per recording, right before the dispatches.
+            commands.SetKeyword(shader, narrowKeys, options.KeyBits == 12);
             commands.SetComputeIntParam(shader, SlotCountId, slotCount);
+            commands.SetComputeIntParam(shader, UseBudgetsId, useBudgets ? 1 : 0);
             SetViewParams(commands, input.View);
 
             commands.SetComputeBufferParam(shader, clearKernel, HistogramId, histogram);
@@ -118,6 +153,7 @@ namespace GSplat
             commands.SetComputeTextureParam(shader, keysKernel, SplatsId, input.Gpu.SplatTexture);
             commands.SetComputeBufferParam(shader, keysKernel, ChunksId, input.Gpu.ChunkBuffer);
             commands.SetComputeBufferParam(shader, keysKernel, VisibleChunksId, input.VisibleChunkBuffer);
+            commands.SetComputeBufferParam(shader, keysKernel, ChunkBudgetsId, useBudgets ? input.ChunkBudgetBuffer : emptyBudgets);
             commands.SetComputeBufferParam(shader, keysKernel, KeysId, keys);
             commands.SetComputeBufferParam(shader, keysKernel, HistogramId, histogram);
             commands.DispatchCompute(shader, keysKernel, slotGroups, 1, 1);
@@ -158,6 +194,8 @@ namespace GSplat
             keys = null;
             histogram?.Dispose();
             histogram = null;
+            emptyBudgets?.Dispose();
+            emptyBudgets = null;
             drawArgs?.Dispose();
             drawArgs = null;
             if (orderTexture != null)

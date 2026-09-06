@@ -21,19 +21,27 @@ namespace GSplat
         /// <summary>Hash of the visible set currently in <see cref="VisibleChunkBuffer"/>; the buffer is re-uploaded only when it changes.</summary>
         public int UploadedVisibleHash;
 
+        /// <summary>P3: per visible chunk, the number of splats it may draw this frame (parallel to VisibleChunks).</summary>
+        public NativeArray<int> ChunkBudgets;
+        public readonly GraphicsBuffer ChunkBudgetBuffer;
+
         public SplatCameraState(int chunkCount)
         {
             VisibleChunks = new NativeArray<int>(math.max(1, chunkCount), Allocator.Persistent);
+            ChunkBudgets = new NativeArray<int>(math.max(1, chunkCount), Allocator.Persistent);
             if (SystemInfo.supportsComputeShaders)
             {
                 VisibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, chunkCount), sizeof(int)) { name = "GSplat Visible Chunks" };
+                ChunkBudgetBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, chunkCount), sizeof(int)) { name = "GSplat Chunk Budgets" };
             }
         }
 
         public void Dispose()
         {
             if (VisibleChunks.IsCreated) VisibleChunks.Dispose();
+            if (ChunkBudgets.IsCreated) ChunkBudgets.Dispose();
             VisibleChunkBuffer?.Dispose();
+            ChunkBudgetBuffer?.Dispose();
         }
     }
 }

@@ -37,11 +37,13 @@ namespace GSplat.Editor
             return renderer;
         }
 
-        /// <summary>The "Viewer" object with the debug overlay; callers add UI or quality components to it.</summary>
+        /// <summary>The "Viewer" object with the debug overlay, the settings applier and the debug menu; callers add UI or quality components to it.</summary>
         public static GameObject CreateViewerObject()
         {
             var viewer = new GameObject("Viewer");
             viewer.AddComponent<SplatDebugOverlay>();
+            viewer.AddComponent<SplatSettingsApplier>();
+            viewer.AddComponent<SplatDebugMenu>();
             return viewer;
         }
     }

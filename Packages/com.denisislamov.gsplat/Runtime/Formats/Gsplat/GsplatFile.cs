@@ -44,6 +44,9 @@ namespace GSplat
         public const int ChunkEntrySize = 32;
         public const byte FlagAntialiased = 0x1;
 
+        /// <summary>Splats are importance-ordered inside each chunk (GsplatData.ImportanceOrdered).</summary>
+        public const byte FlagImportanceOrdered = 0x2;
+
         public static byte[] Serialize(GsplatData data)
         {
             if (data == null) throw new ArgumentNullException(nameof(data));
@@ -58,7 +61,7 @@ namespace GSplat
             BinaryPrimitives.WriteUInt32LittleEndian(header.Slice(8), (uint)data.SplatCount);
             BinaryPrimitives.WriteUInt32LittleEndian(header.Slice(12), (uint)data.ChunkCount);
             header[16] = (byte)data.ShDegree;
-            header[17] = data.Antialiased ? FlagAntialiased : (byte)0;
+            header[17] = (byte)((data.Antialiased ? FlagAntialiased : 0) | (data.ImportanceOrdered ? FlagImportanceOrdered : 0));
             header[18] = 0;
             header[19] = 0;
             WriteFloat3(header.Slice(20), data.BoundsMin);
@@ -105,6 +108,7 @@ namespace GSplat
             int chunkCount = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(header.Slice(12)));
             int shDegree = header[16];
             bool antialiased = (header[17] & FlagAntialiased) != 0;
+            bool importanceOrdered = (header[17] & FlagImportanceOrdered) != 0;
             float3 boundsMin = ReadFloat3(header.Slice(20));
             float3 boundsMax = ReadFloat3(header.Slice(32));
 
@@ -115,7 +119,7 @@ namespace GSplat
             long expectedSize = HeaderSize + (long)chunkCount * ChunkEntrySize + (long)splatCount * PackedSplat.SizeInBytes + shBytes;
             if (bytes.Length < expectedSize) throw new GsplatFileException(GsplatFileError.TruncatedPayload, $"The .gsplat payload is {bytes.Length} bytes but {expectedSize} are needed. The file is probably cut off.");
 
-            var data = new GsplatData(splatCount, shDegree, antialiased, boundsMin, boundsMax, allocator);
+            var data = new GsplatData(splatCount, shDegree, antialiased, boundsMin, boundsMax, allocator, importanceOrdered);
             try
             {
                 int offset = HeaderSize;

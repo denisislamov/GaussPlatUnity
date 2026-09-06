@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using Unity.Collections;
@@ -60,6 +61,19 @@ namespace GSplat
         /// </summary>
         public static void Decode(byte[] bytes, SpzHeader header, SplatCloud cloud)
         {
+            foreach (string unused in DecodeInSteps(bytes, header, cloud))
+            {
+                // Each step is one attribute; here they simply run back to back.
+            }
+        }
+
+        /// <summary>
+        /// The same decode as <see cref="Decode"/> cut into steps: inflate, then one attribute per step. Yields the name
+        /// of the step just finished, so a caller on a platform without worker threads (WebGL) can give the page a frame
+        /// between steps instead of freezing it for the whole file (P7).
+        /// </summary>
+        public static IEnumerable<string> DecodeInSteps(byte[] bytes, SpzHeader header, SplatCloud cloud)
+        {
             if (bytes == null) throw new ArgumentNullException(nameof(bytes));
             if (cloud == null) throw new ArgumentNullException(nameof(cloud));
             if (cloud.Count != header.PointCount)
@@ -89,13 +103,20 @@ namespace GSplat
 
             // The header is inside the gzip stream too; the body starts right after it.
             byte[] body = Decompress(bytes, 0, SpzHeader.LegacyHeaderSize + (int)bodySize, "body");
+            yield return "inflate";
             int offset = SpzHeader.LegacyHeaderSize;
             offset = DecodePositions(body, offset, header, cloud);
+            yield return "positions";
             offset = DecodeAlphas(body, offset, cloud);
+            yield return "alphas";
             offset = DecodeColors(body, offset, cloud);
+            yield return "colors";
             offset = DecodeScales(body, offset, cloud);
+            yield return "scales";
             offset = DecodeRotations(body, offset, header, cloud);
+            yield return "rotations";
             DecodeSh(body, offset, fileShCoefficients, cloud);
+            yield return "sh";
         }
 
         /// <summary>Inflates exactly <paramref name="expectedSize"/> bytes starting at <paramref name="offset"/> of the file.</summary>

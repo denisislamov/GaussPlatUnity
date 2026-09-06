@@ -122,6 +122,31 @@ GSplatFootprint GSplatScreenFootprint(float3 cov, float maxStdDev, float minPixe
     return fp;
 }
 
+// Corner of the quad in ellipse units (each component -1 or +1) for vertex 0..3 of a 6-index quad.
+float2 GSplatQuadCorner(uint vertexId)
+{
+    return float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
+}
+
+// P2: one triangle instead of a quad. The equilateral triangle that contains the unit circle has its corners on a
+// circle of radius 2, at 90, 210 and 330 degrees; it also contains the quad's unit square, so no pixel of the
+// quad is lost, and the tiler processes one primitive per splat instead of two.
+float2 GSplatTriangleCorner(uint vertexId)
+{
+    const float2 corners[3] = { float2(0.0, 2.0), float2(-1.7320508, -1.0), float2(1.7320508, -1.0) };
+    return corners[vertexId % 3u];
+}
+
+// P9: a falloff without exp. (1 - d^2/8)^4 matches exp(-d^2/2) to within 0.02 over the visible range and reaches
+// zero at d = sqrt(8), the classic quad reach, instead of trailing off; cheaper on GPUs where exp is not a single
+// instruction. A visible change (slightly harder edges), so it is a switch, not the default.
+float GSplatCheapGaussian(float distanceSq)
+{
+    float t = saturate(1.0 - distanceSq * 0.125);
+    t *= t;
+    return t * t;
+}
+
 // Pixel offset of a quad corner (each component -1 or +1) from the splat center.
 float2 GSplatCornerOffsetPixels(float2 corner, GSplatFootprint fp)
 {

@@ -35,14 +35,7 @@ namespace GSplat
             // Sort key: descending importance in the high 32 bits, original index in the low 32 bits. Positive
             // floats keep their order when compared as uint bit patterns, so ~bits gives a descending sort.
             var keys = new NativeArray<ulong>(survivors.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            var keyJob = new ImportanceKeyJob
-            {
-                Candidates = survivors.AsArray(),
-                Alphas = cloud.Alphas,
-                LogScales = cloud.LogScales,
-                Keys = keys
-            };
-            keyJob.Schedule(survivors.Length, 4096).Complete();
+            WriteImportanceKeys(cloud, survivors.AsArray(), keys);
             keys.SortJob().Schedule().Complete();
 
             var kept = new NativeArray<int>(maxSplatCount, allocator, NativeArrayOptions.UninitializedMemory);
@@ -57,6 +50,22 @@ namespace GSplat
             // Back to file order so the later spatial sort starts from a deterministic input.
             kept.Sort();
             return kept;
+        }
+
+        /// <summary>
+        /// For each candidate: descending importance in the high 32 bits, the splat index in the low 32, so an ascending
+        /// sort of the keys lists the most important splats first. Shared with the chunk ordering of P3.
+        /// </summary>
+        public static void WriteImportanceKeys(SplatCloud cloud, NativeArray<int> candidates, NativeArray<ulong> keys)
+        {
+            var keyJob = new ImportanceKeyJob
+            {
+                Candidates = candidates,
+                Alphas = cloud.Alphas,
+                LogScales = cloud.LogScales,
+                Keys = keys
+            };
+            keyJob.Schedule(candidates.Length, 4096).Complete();
         }
 
         [BurstCompile]

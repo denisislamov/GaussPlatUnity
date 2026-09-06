@@ -18,21 +18,19 @@ namespace GSplat
             if (cloud == null) throw new ArgumentNullException(nameof(cloud));
             if (options == null) throw new ArgumentNullException(nameof(options));
 
-            CoordinateConverter.ConvertToUnity(cloud, options.SourceCoordinateSystem);
-
-            NativeArray<int> kept = SplatFilter.SelectIndices(cloud, options.PruneAlphaBelow, options.MaxSplatCount, Allocator.TempJob);
-            NativeArray<int> order = kept;
-            if (options.SpatialSort)
-            {
-                order = SplatSpatialSort.Order(cloud, kept, Allocator.TempJob);
-                kept.Dispose();
-            }
-
-            SplatCloud ordered = SplatReorder.Apply(cloud, order, options.TargetShDegree, Allocator.TempJob);
-            order.Dispose();
+            // The same four steps SplatLoader runs with a frame between them (P7); here back to back.
+            NativeArray<int> order = SelectAndOrder(cloud, options);
+            SplatCloud ordered = Reorder(cloud, order, options);
             try
             {
-                return Pack(ordered, allocator);
+                if (options.OrderChunksByImportance)
+                {
+                    SplatCloud byImportance = OrderChunksByImportance(ordered, Allocator.TempJob);
+                    ordered.Dispose();
+                    ordered = byImportance;
+                }
+
+                return Pack(ordered, allocator, options.OrderChunksByImportance);
             }
             finally
             {
@@ -40,13 +38,66 @@ namespace GSplat
             }
         }
 
+        /// <summary>Step 1: axis conversion (in place), pruning and budget, Morton order. Returns the order of the kept splats (TempJob, caller disposes through <see cref="Reorder"/>).</summary>
+        public static NativeArray<int> SelectAndOrder(SplatCloud cloud, SplatImportOptions options)
+        {
+            CoordinateConverter.ConvertToUnity(cloud, options.SourceCoordinateSystem);
+
+            NativeArray<int> kept = SplatFilter.SelectIndices(cloud, options.PruneAlphaBelow, options.MaxSplatCount, Allocator.TempJob);
+            if (!options.SpatialSort) return kept;
+
+            NativeArray<int> order = SplatSpatialSort.Order(cloud, kept, Allocator.TempJob);
+            kept.Dispose();
+            return order;
+        }
+
+        /// <summary>Step 2: the kept splats in Morton order as a new cloud (SH capped at the target degree). Disposes <paramref name="order"/>.</summary>
+        public static SplatCloud Reorder(SplatCloud cloud, NativeArray<int> order, SplatImportOptions options)
+        {
+            SplatCloud ordered = SplatReorder.Apply(cloud, order, options.TargetShDegree, Allocator.TempJob);
+            order.Dispose();
+            return ordered;
+        }
+
+        /// <summary>
+        /// P3: keeps every splat in its chunk (Morton order decided the chunks) but sorts the splats of each chunk by
+        /// importance, most important first. A chunk's first k splats are then its best k-splat approximation, which
+        /// is what the per-chunk budget in the key pass draws.
+        /// </summary>
+        public static SplatCloud OrderChunksByImportance(SplatCloud ordered, Allocator allocator)
+        {
+            if (ordered == null) throw new ArgumentNullException(nameof(ordered));
+
+            var identity = new NativeArray<int>(ordered.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            for (int splatIndex = 0; splatIndex < identity.Length; splatIndex++) identity[splatIndex] = splatIndex;
+            var keys = new NativeArray<ulong>(ordered.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            SplatFilter.WriteImportanceKeys(ordered, identity, keys);
+            identity.Dispose();
+
+            // Sort each chunk's keys on their own: the high bits order by importance, the low bits are the source index.
+            for (int chunkIndex = 0; chunkIndex < SplatChunkInfo.ChunkCountFor(ordered.Count); chunkIndex++)
+            {
+                int first = chunkIndex * SplatChunkInfo.Size;
+                int count = math.min(SplatChunkInfo.Size, ordered.Count - first);
+                keys.GetSubArray(first, count).Sort();
+            }
+
+            var newOrder = new NativeArray<int>(ordered.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            for (int splatIndex = 0; splatIndex < newOrder.Length; splatIndex++) newOrder[splatIndex] = (int)(keys[splatIndex] & 0xFFFFFFFF);
+            keys.Dispose();
+
+            SplatCloud result = SplatReorder.Apply(ordered, newOrder, ordered.ShDegree, allocator);
+            newOrder.Dispose();
+            return result;
+        }
+
         /// <summary>Packs an already ordered cloud. Exposed for tests that want to control the order.</summary>
-        public static GsplatData Pack(SplatCloud ordered, Allocator allocator = Allocator.Persistent)
+        public static GsplatData Pack(SplatCloud ordered, Allocator allocator = Allocator.Persistent, bool importanceOrdered = false)
         {
             if (ordered == null) throw new ArgumentNullException(nameof(ordered));
 
             ordered.ComputeBounds(out float3 boundsMin, out float3 boundsMax);
-            var data = new GsplatData(ordered.Count, ordered.ShDegree, ordered.Antialiased, boundsMin, boundsMax, allocator);
+            var data = new GsplatData(ordered.Count, ordered.ShDegree, ordered.Antialiased, boundsMin, boundsMax, allocator, importanceOrdered);
             try
             {
                 ComputeChunkBounds(ordered, data);

@@ -97,14 +97,14 @@ namespace GSplat.Tests
         }
 
         /// <summary>Depth must not increase along the order (farthest first) and every splat must appear exactly once.</summary>
-        public void AssertBackToFront(List<uint> order)
+        public void AssertBackToFront(List<uint> order, int keyBits = SplatSortKeys.KeyBits)
         {
             Assert.AreEqual(Data.SplatCount, order.Count, "slot count");
             var seen = new bool[Data.SplatCount];
             SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, Radial, out float minDepth, out float maxDepth);
             SplatSortKeys.LogRange(minDepth, maxDepth, out _, out float inverseLogRange);
-            // Keys are linear in log(depth): one bucket spans depth * (ratio - 1).
-            float ratio = math.exp(1f / (inverseLogRange * SplatSortKeys.MaxKey));
+            // Keys are linear in log(depth): one bucket spans depth * (ratio - 1); a narrower key has wider buckets.
+            float ratio = math.exp(1f / (inverseLogRange * SplatSortKeys.MaxKeyFor(keyBits)));
             float previousDepth = float.MaxValue;
             for (int slot = 0; slot < order.Count; slot++)
             {

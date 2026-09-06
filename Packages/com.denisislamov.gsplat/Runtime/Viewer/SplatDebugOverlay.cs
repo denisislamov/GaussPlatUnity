@@ -34,7 +34,7 @@ namespace GSplat
             smoothedFrameMs = smoothedFrameMs <= 0f ? frameMs : Mathf.Lerp(smoothedFrameMs, frameMs, 0.1f);
 
             if (UnityEngine.InputSystem.Keyboard.current != null && UnityEngine.InputSystem.Keyboard.current.f3Key.wasPressedThisFrame) visible = !visible;
-            if (!visible || Time.unscaledTime < nextRefresh) return;
+            if (!visible || !SplatDebugSettings.Current.ShowOverlay || Time.unscaledTime < nextRefresh) return;
             nextRefresh = Time.unscaledTime + 0.25f;
             cachedText = Compose();
         }
@@ -51,7 +51,7 @@ namespace GSplat
             foreach (GaussianSplatRenderer renderer in GaussianSplatRenderer.Active)
             {
                 total += renderer.SplatCount;
-                string sorter = renderer.Sorter is GpuCountingSorter ? "GPU" : "CPU";
+                string sorter = renderer.Sorter is GpuCountingSorter ? "GPU" : renderer.Sorter is CpuCountingSorter cpu ? $"CPU {cpu.LastSortMilliseconds:F1} ms" : "none";
                 string upload = renderer.Gpu != null && !renderer.Gpu.IsFullyUploaded ? $" uploading {renderer.Gpu.UploadedChunkCount}/{renderer.Gpu.ChunkCount}" : "";
                 text.AppendLine($"{renderer.name}: {renderer.LastDrawnSplatCount:N0} / {renderer.SplatCount:N0} splats, {renderer.LastVisibleChunkCount} chunks, sort {sorter}{upload}");
             }
@@ -63,16 +63,18 @@ namespace GSplat
 
         private void OnGUI()
         {
-            if (!visible) return;
+            if (!visible || !SplatDebugSettings.Current.ShowOverlay) return;
 
             // Inside the safe area (notches, rounded corners) and as tall as the text needs.
             Rect safe = SafeAreaPanel.GuiRect(Screen.safeArea, Screen.height);
             GUIStyle style = GUI.skin.label;
             style.fontSize = Mathf.Max(12, Screen.height / 80);
             style.wordWrap = true;
+            // Leaves the top-right corner to the debug menu button, so the two never overlap.
+            float menuButtonPixels = VirtualJoystick.DpToPixels(SplatDebugMenu.ButtonSizeDp + 16f);
             float x = safe.xMin + 10f;
             float y = safe.yMin + 10f;
-            float width = safe.width - 20f;
+            float width = safe.width - 20f - menuButtonPixels;
             float height = style.CalcHeight(new GUIContent(cachedText), width) + 4f;
 
             GUI.color = Color.black;

@@ -29,6 +29,22 @@ namespace GSplat.Sandbox.Editor
             Build(BuildTarget.WebGL, "Builds/WebGL");
         }
 
+        /// <summary>
+        /// P6: the browser with compute shaders. Unity 6 ships WebGPU as experimental; with it the GPU sorter runs in the
+        /// browser unchanged. WebGL2 stays the fallback in the same build.
+        /// </summary>
+        [MenuItem("GSplat/Build/WebGL (WebGPU + WebGL2)")]
+        public static void BuildWebGpu()
+        {
+            EnsureScenes();
+            PlayerSettings.WebGL.template = "PROJECT:GSplatViewer";
+            PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Brotli;
+            PlayerSettings.WebGL.decompressionFallback = true;
+            PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.WebGL, false);
+            PlayerSettings.SetGraphicsAPIs(BuildTarget.WebGL, new[] { GraphicsDeviceType.WebGPU, GraphicsDeviceType.OpenGLES3 });
+            Build(BuildTarget.WebGL, "Builds/WebGPU");
+        }
+
         [MenuItem("GSplat/Build/Android (Vulkan + GLES3, arm64)")]
         public static void BuildAndroid()
         {
