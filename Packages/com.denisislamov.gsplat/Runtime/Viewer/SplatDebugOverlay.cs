@@ -45,7 +45,7 @@ namespace GSplat
             text.Append($"{1000f / Mathf.Max(smoothedFrameMs, 0.01f):F0} FPS  {smoothedFrameMs:F1} ms");
             if (qualityController != null) text.Append($"  p95 {qualityController.FrameTimeP95:F1} ms  quality step {qualityController.Step}");
             text.AppendLine();
-            text.AppendLine($"{SystemInfo.graphicsDeviceType}  {Screen.width}x{Screen.height}  compute {(SystemInfo.supportsComputeShaders ? "yes" : "no")}");
+            text.AppendLine($"GSplat {GSplatVersion.Current}  {SystemInfo.graphicsDeviceType}  {Screen.width}x{Screen.height}  compute {(SystemInfo.supportsComputeShaders ? "yes" : "no")}");
 
             long total = 0;
             foreach (GaussianSplatRenderer renderer in GaussianSplatRenderer.Active)

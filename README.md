@@ -20,9 +20,11 @@ skybox and before URP transparents, so particles always end up on top of them.
 
 Tested so far on a Mac (Metal). Android and WebGL builds compile and start, but I have not measured
 them on real phones yet. Numbers I have: the horned lizard sample from Niantic (786k splats) renders
-at 1080x1920 in about 10 ms on Apple Silicon.
+at 1080x1920 in about 6 ms on Apple Silicon, and matches the Spark web viewer at 38 dB PSNR from the
+same camera.
 
-See [QUICKSTART.md](QUICKSTART.md) to get a scene on screen in a few minutes.
+See [QUICKSTART.md](QUICKSTART.md) to get a scene on screen in a few minutes, [HOW-IT-WORKS.md](HOW-IT-WORKS.md)
+for the long explanation of the pipeline, and [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
 
 Requires Unity 6000.3.19f1. The package lives in `Packages/com.denisislamov.gsplat` and can be
 copied into any URP project. MIT license. Sample scenes in `Assets/Samples/Niantic` are from the
