@@ -8,6 +8,15 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/SampleScene.unity
     guid: 99c9720ab356a0642a771bea13969a05
+  - enabled: 1
+    path: Assets/Scenes/InnerTest/study_room.unity
+    guid: 068bc27d660aa47e6a6f6ea8b03c2c45
+  - enabled: 1
+    path: Assets/Scenes/InnerTest/fantasy_village_house.unity
+    guid: cb266dc67753041b69d8fedb5165a5c3
+  - enabled: 1
+    path: Assets/Scenes/InnerTest/spaceship_interior.unity
+    guid: 8a06c695a3f17455bac724fd323ac001
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0

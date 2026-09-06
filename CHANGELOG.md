@@ -9,6 +9,12 @@ Readability release: the code was reorganized so that each file does one thing a
 list of steps. Rendering output and frame times are the same as 0.2.0 (checked against the golden images, two new
 ones of real scenes included, and the frame-time tests).
 
+- WebGL: worlds load again. The renderer created structured GPU buffers for the compute sorter on every platform,
+  and WebGL2 has none, so `SetData` threw inside a fire-and-forget load and the viewer sat on "Preparing" with a
+  black screen. The buffers are now created only where compute shaders exist, and an unexpected exception in
+  `WorldLoader.LoadAsync` is logged and shown as a failed load instead of vanishing.
+- WebGL: the page hook and `Load On Start` no longer start the same load twice (one "Loading was cancelled" error
+  at startup).
 - `GaussianSplatRenderer.TryPrepare` is three named steps; the per-camera state has its own file.
 - `SplatCameraView` carries the camera data both sorters need; the CPU job and the compute kernel read the same
   struct. `ISplatSorter.PrepareOnMainThread` is now `Sort`, and `NeedsCompute` is gone (ask for `DrawArgs`).
