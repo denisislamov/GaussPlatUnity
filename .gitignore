@@ -57,3 +57,7 @@ crashlytics-build.properties
 # InnerTest exports are for internal testing only; their license does not allow redistribution here
 /Assets/Samples/InnerTest/
 /Assets/Samples/InnerTest.meta
+
+# Scene built from the git-ignored InnerTest exports: its references would be broken for anyone else
+/Assets/Scenes/InnerTestSamples.unity
+/Assets/Scenes/InnerTestSamples.unity.meta
