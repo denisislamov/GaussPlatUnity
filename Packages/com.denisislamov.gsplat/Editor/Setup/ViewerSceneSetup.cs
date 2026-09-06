@@ -46,7 +46,6 @@ namespace GSplat.Editor
             viewer.AddComponent<SplatViewerUi>();
             viewer.AddComponent<SplatQualityController>();
             viewer.AddComponent<SplatDebugOverlay>();
-            viewer.AddComponent<SplatSceneMenu>();
 
             EditorSceneManager.SaveScene(scene, path);
             Debug.Log($"GSplat: viewer scene created at {path}. Set 'World Url' on the World object (a descriptor .json or a .spz URL) and press Play.");

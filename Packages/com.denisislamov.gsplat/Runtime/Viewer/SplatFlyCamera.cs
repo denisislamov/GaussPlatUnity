@@ -13,17 +13,25 @@ namespace GSplat
     public sealed class SplatFlyCamera : MonoBehaviour
     {
         [Header("Speed")]
-        [SerializeField, Min(0.01f)] private float moveSpeed = 2f;
-        [SerializeField, Min(1f)] private float boostMultiplier = 4f;
-        [SerializeField, Range(0.05f, 1f)] private float lookDegreesPerPixel = 0.15f;
+        [SerializeField, Min(0.01f), Tooltip("Meters per second at full stick / key.")]
+        private float moveSpeed = 1.5f;
+        [SerializeField, Min(1f)] private float boostMultiplier = 3f;
         [SerializeField, Range(0f, 0.5f), Tooltip("Seconds to reach the target velocity; 0 = instant.")]
-        private float smoothing = 0.1f;
+        private float smoothing = 0.15f;
+
+        [Header("Look")]
+        [SerializeField, Range(30f, 360f), Tooltip("Degrees turned by a mouse drag across the full screen height. Screen-relative so every DPI feels the same.")]
+        private float mouseDegreesPerScreenHeight = 110f;
+        [SerializeField, Range(30f, 360f), Tooltip("Degrees turned by a one-finger drag across the full screen height.")]
+        private float touchDegreesPerScreenHeight = 150f;
+        [SerializeField, Range(0f, 0.3f), Tooltip("Seconds of smoothing on touch look; hides finger jitter without feeling laggy.")]
+        private float touchLookSmoothing = 0.06f;
 
         [Header("Touch")]
-        [SerializeField, Min(0.001f), Tooltip("Meters moved forward per pixel of pinch spread.")]
-        private float pinchMetersPerPixel = 0.01f;
-        [SerializeField, Min(0.001f), Tooltip("Meters panned per pixel of two-finger drag.")]
-        private float panMetersPerPixel = 0.005f;
+        [SerializeField, Min(0.01f), Tooltip("Meters moved forward when the pinch distance doubles (log scale: the same gesture feels the same at any zoom).")]
+        private float pinchMetersPerDoubling = 1.2f;
+        [SerializeField, Min(0.01f), Tooltip("Meters panned by a two-finger drag across the full screen height.")]
+        private float panMetersPerScreenHeight = 1.5f;
 
         [Header("Limits")]
         [SerializeField, Tooltip("Keep the camera inside the world bounds grown by this factor (0 = no limit).")]
@@ -45,6 +53,7 @@ namespace GSplat
         private Bounds? limitBounds;
         private float previousPinchDistance = -1f;
         private Vector2 previousTwoFingerCenter;
+        private Vector2 smoothedTouchLook;
 
         /// <summary>Set by the on-screen joystick every frame: x strafe, y forward, each in [-1, 1].</summary>
         public Vector2 JoystickInput { get; set; }
@@ -105,12 +114,13 @@ namespace GSplat
             Vector3 moveLocal = Vector3.zero;
             float speedScale = 1f;
 
+            // look is accumulated in degrees by the input readers.
             ReadMouseAndKeyboard(ref look, ref moveLocal, ref speedScale);
             ReadTouch(ref look, ref moveLocal);
             moveLocal += new Vector3(JoystickInput.x, 0f, JoystickInput.y);
 
-            yaw += look.x * lookDegreesPerPixel;
-            pitch = Mathf.Clamp(pitch - look.y * lookDegreesPerPixel, -89f, 89f);
+            yaw += look.x;
+            pitch = Mathf.Clamp(pitch - look.y, -89f, 89f);
             transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
 
             if (moveLocal.sqrMagnitude > 1f) moveLocal.Normalize();
@@ -161,7 +171,7 @@ namespace GSplat
             Mouse mouse = Mouse.current;
             if (mouse != null)
             {
-                if (mouse.rightButton.isPressed) look += mouse.delta.ReadValue();
+                if (mouse.rightButton.isPressed) look += mouse.delta.ReadValue() * (mouseDegreesPerScreenHeight / Screen.height);
                 float scroll = mouse.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.01f) moveSpeed = Mathf.Clamp(moveSpeed * (scroll > 0f ? 1.15f : 1f / 1.15f), 0.05f, 100f);
             }
@@ -187,10 +197,14 @@ namespace GSplat
 
             if (activeCount == 1)
             {
-                look += first.delta.ReadValue();
+                Vector2 target = first.delta.ReadValue() * (touchDegreesPerScreenHeight / Screen.height);
+                smoothedTouchLook = touchLookSmoothing > 0f ? Vector2.Lerp(smoothedTouchLook, target, 1f - Mathf.Exp(-Time.deltaTime / touchLookSmoothing)) : target;
+                look += smoothedTouchLook;
                 previousPinchDistance = -1f;
                 return;
             }
+
+            smoothedTouchLook = Vector2.zero;
 
             if (activeCount >= 2)
             {
@@ -198,11 +212,13 @@ namespace GSplat
                 Vector2 b = second.position.ReadValue();
                 float distance = Vector2.Distance(a, b);
                 Vector2 center = (a + b) * 0.5f;
-                if (previousPinchDistance > 0f)
+                if (previousPinchDistance > 0f && distance > 1f)
                 {
-                    // Pinch: fingers apart = forward; two-finger drag = pan. Both are direct position changes, not velocities.
-                    float forward = (distance - previousPinchDistance) * pinchMetersPerPixel;
-                    Vector2 pan = (center - previousTwoFingerCenter) * panMetersPerPixel;
+                    // Pinch: log of the distance ratio, so spreading 100 -> 200 px moves as much as 200 -> 400 px;
+                    // clamped so a finger landing far away cannot teleport the camera. Two-finger drag = pan.
+                    float doublings = Mathf.Clamp(Mathf.Log(distance / previousPinchDistance, 2f), -0.5f, 0.5f);
+                    float forward = doublings * pinchMetersPerDoubling;
+                    Vector2 pan = (center - previousTwoFingerCenter) * (panMetersPerScreenHeight / Screen.height);
                     Move(transform.forward * forward - transform.right * pan.x - transform.up * pan.y);
                 }
 

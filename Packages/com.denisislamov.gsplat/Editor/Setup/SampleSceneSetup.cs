@@ -96,6 +96,8 @@ namespace GSplat.Editor
                 viewer.AddComponent<DeviceQualityApplier>();
                 viewer.AddComponent<SplatSceneMenu>();
 
+                AddReferenceGeometry();
+
                 string scenePath = $"{sceneFolder}/{name}.unity";
                 EditorSceneManager.SaveScene(scene, scenePath);
                 created++;
@@ -184,6 +186,24 @@ namespace GSplat.Editor
         /// 100k/150k/500k/full_res) the 500k one is taken, else the largest. By file, not by "t:GaussianSplatAsset":
         /// the type search index is not reliable right after a batch import.
         /// </summary>
+        /// <summary>A lit URP cube and a light in front of the spawn: shows depth compositing of splats with ordinary geometry.</summary>
+        private static void AddReferenceGeometry()
+        {
+            GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            cube.name = "Reference Cube (URP Lit)";
+            cube.transform.position = new Vector3(0.6f, -0.6f, 2f);
+            cube.transform.localScale = Vector3.one * 0.4f;
+            cube.transform.rotation = Quaternion.Euler(0f, 30f, 0f);
+            var material = new Material(Shader.Find("Universal Render Pipeline/Lit")) { color = new Color(0.9f, 0.45f, 0.15f) };
+            cube.GetComponent<MeshRenderer>().sharedMaterial = material;
+
+            var lightObject = new GameObject("Directional Light");
+            Light light = lightObject.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.2f;
+            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+        }
+
         private static List<GaussianSplatAsset> FindAssets(string folder)
         {
             var result = new List<GaussianSplatAsset>();
