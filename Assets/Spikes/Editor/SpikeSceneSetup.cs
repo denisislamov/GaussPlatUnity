@@ -5,7 +5,11 @@ using UnityEngine.SceneManagement;
 
 namespace GSplat.Sandbox.Editor
 {
-    /// <summary>Creates Assets/Scenes/SortSpike.unity: a camera and the SortSpike runner. Menu GSplat/Spikes or -executeMethod from CI.</summary>
+    /// <summary>
+    /// Creates Assets/Scenes/SortSpike.unity: a camera and the SortSpike runner. Menu GSplat/Spikes or -executeMethod from CI.
+    /// Built by hand rather than with the package's SceneObjects: the spike needs no fly camera, URP camera data or
+    /// overlay, only a plain camera to keep the app alive while the runner measures.
+    /// </summary>
     public static class SpikeSceneSetup
     {
         private const string ScenePath = "Assets/Scenes/SortSpike.unity";

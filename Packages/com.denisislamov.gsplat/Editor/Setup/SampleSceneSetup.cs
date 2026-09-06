@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace GSplat.Editor
@@ -74,26 +73,12 @@ namespace GSplat.Editor
                 List<GaussianSplatAsset> assets = FindAssets(worldFolder);
                 if (assets.Count == 0) continue;
 
-                var cameraObject = new GameObject("Main Camera");
-                Camera camera = cameraObject.AddComponent<Camera>();
-                camera.clearFlags = CameraClearFlags.SolidColor;
-                camera.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
-                camera.nearClipPlane = 0.05f;
-                camera.farClipPlane = 200f;
+                // Indoor world around the origin: near-black background, short far plane, a slightly wider lens.
+                Camera camera = SceneObjects.CreateMainCamera(new Color(0.02f, 0.02f, 0.03f), 200f);
                 camera.fieldOfView = 65f;
-                cameraObject.tag = "MainCamera";
-                cameraObject.AddComponent<UniversalAdditionalCameraData>();
-                cameraObject.AddComponent<SplatFlyCamera>();
 
-                var holder = new GameObject(assets[0].name);
-                var renderer = holder.AddComponent<GaussianSplatRenderer>();
-                var serialized = new SerializedObject(renderer);
-                serialized.FindProperty("asset").objectReferenceValue = assets[0];
-                serialized.ApplyModifiedPropertiesWithoutUndo();
-
-                var viewer = new GameObject("Viewer");
-                viewer.AddComponent<SplatDebugOverlay>();
-                viewer.AddComponent<DeviceQualityApplier>();
+                SceneObjects.CreateSplatObject(assets[0]);
+                SceneObjects.CreateViewerObject().AddComponent<DeviceQualityApplier>();
 
                 AddReferenceGeometry();
                 AddSceneSwitchCanvas();
@@ -136,18 +121,9 @@ namespace GSplat.Editor
                 return;
             }
 
-            var cameraObject = new GameObject("Main Camera");
-            Camera camera = cameraObject.AddComponent<Camera>();
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.08f, 0.08f, 0.1f);
-            camera.nearClipPlane = 0.05f;
-            camera.farClipPlane = 500f;
-            cameraObject.tag = "MainCamera";
-            cameraObject.AddComponent<UniversalAdditionalCameraData>();
-            cameraObject.AddComponent<SplatFlyCamera>();
-
-            var viewer = new GameObject("Viewer");
-            viewer.AddComponent<SplatDebugOverlay>();
+            Camera camera = SceneObjects.CreateMainCamera(new Color(0.08f, 0.08f, 0.1f), 500f);
+            GameObject cameraObject = camera.gameObject;
+            SceneObjects.CreateViewerObject();
 
             // Scenes are laid out along X with a gap, each standing on y = 0 by its bounds.
             float cursorX = 0f;
@@ -155,16 +131,12 @@ namespace GSplat.Editor
             for (int assetIndex = 0; assetIndex < assets.Count; assetIndex++)
             {
                 GaussianSplatAsset asset = assets[assetIndex];
-                var holder = new GameObject(asset.name);
-                var renderer = holder.AddComponent<GaussianSplatRenderer>();
-                var serialized = new SerializedObject(renderer);
-                serialized.FindProperty("asset").objectReferenceValue = asset;
-                serialized.ApplyModifiedPropertiesWithoutUndo();
+                GaussianSplatRenderer renderer = SceneObjects.CreateSplatObject(asset);
 
                 Bounds bounds = asset.Bounds;
                 float size = Mathf.Max(bounds.size.x, bounds.size.z);
                 cursorX += size * 0.5f;
-                holder.transform.position = new Vector3(cursorX - bounds.center.x, -bounds.min.y, -bounds.center.z);
+                renderer.transform.position = new Vector3(cursorX - bounds.center.x, -bounds.min.y, -bounds.center.z);
                 cursorX += size * 0.5f + size * 0.3f;
                 largestSize = Mathf.Max(largestSize, bounds.size.magnitude);
             }
@@ -181,11 +153,6 @@ namespace GSplat.Editor
             Debug.Log($"GSplat: sample scene with {assets.Count} asset(s) saved to {scenePath}.");
         }
 
-        /// <summary>
-        /// One asset per folder: when a folder holds several quality levels of the same world (InnerTest exports:
-        /// 100k/150k/500k/full_res) the 500k one is taken, else the largest. By file, not by "t:GaussianSplatAsset":
-        /// the type search index is not reliable right after a batch import.
-        /// </summary>
         /// <summary>A real Canvas in the scene (visible in the hierarchy, editable) with one button that loads the next scene of the build.</summary>
         private static void AddSceneSwitchCanvas()
         {
@@ -226,6 +193,14 @@ namespace GSplat.Editor
             lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
         }
 
+        /// <summary>
+        /// One asset per folder: when a folder holds several quality levels of the same world (InnerTest exports:
+        /// 100k/150k/500k/full_res) the 500k one is taken, else the largest. By file, not by "t:GaussianSplatAsset":
+        /// the type search index is not reliable right after a batch import.
+        /// TODO: the one-per-folder rule was added for the InnerTest layout and breaks the Niantic folder, which holds
+        /// two different scenes side by side: regenerating NianticSamples.unity today keeps only the racoons. The
+        /// committed scene predates the rule; decide whether "one per folder" or "one per base name" is right.
+        /// </summary>
         private static List<GaussianSplatAsset> FindAssets(string folder)
         {
             var result = new List<GaussianSplatAsset>();

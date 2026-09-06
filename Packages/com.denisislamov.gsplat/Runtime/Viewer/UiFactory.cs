@@ -15,6 +15,21 @@ namespace GSplat
         /// <summary>The built-in font every text uses; the same asset in the editor and in players.</summary>
         public static Font DefaultFont => Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
+        /// <summary>
+        /// A sprite from Unity's "builtin extra" resources (UI/Skin/UISprite.psd, UI/Skin/Knob.psd). In the editor they
+        /// come from the AssetDatabase, which is what makes a generated scene keep a real sprite reference.
+        /// TODO: in players Resources.GetBuiltinResource does not see the builtin extras (it logs an assert and returns
+        /// null), so the runtime-built buttons draw as plain rectangles. Ship a sprite in the package instead.
+        /// </summary>
+        public static Sprite BuiltinSprite(string path)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.GetBuiltinExtraResource<Sprite>(path);
+#else
+            return Resources.GetBuiltinResource<Sprite>(path);
+#endif
+        }
+
         /// <summary>Creates an EventSystem with the Input System module when the scene has none; UI buttons need one.</summary>
         public static void EnsureEventSystem(Transform parent)
         {
@@ -74,7 +89,7 @@ namespace GSplat
             rect.anchoredPosition = offset;
             rect.sizeDelta = size;
             Image image = buttonObject.GetComponent<Image>();
-            image.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/UISprite.psd");
+            image.sprite = BuiltinSprite("UI/Skin/UISprite.psd");
             image.type = Image.Type.Sliced;
             image.color = new Color(1f, 1f, 1f, alpha);
 

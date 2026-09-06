@@ -100,7 +100,7 @@ namespace GSplat
             zoneRect.anchoredPosition = new Vector2(zone * 0.5f + 24f, zone * 0.5f + 72f); // above the scene menu row
             zoneRect.sizeDelta = new Vector2(zone, zone);
             Image zoneImage = zoneObject.GetComponent<Image>();
-            zoneImage.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+            zoneImage.sprite = UiFactory.BuiltinSprite("UI/Skin/Knob.psd");
             zoneImage.color = new Color(1f, 1f, 1f, 0.25f);
 
             var knobObject = new GameObject("Knob", typeof(Image));
