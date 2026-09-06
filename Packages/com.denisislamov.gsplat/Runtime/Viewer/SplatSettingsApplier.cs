@@ -62,6 +62,8 @@ namespace GSplat
                 if (renderer.SorterKind != settings.SorterKind) renderer.SetSorterKind(settings.SorterKind);
             }
 
+            SplatLoader.StagedBuild = settings.StagedBuild;
+
             UniversalRenderPipelineAsset pipeline = UniversalRenderPipeline.asset;
             if (pipeline != null && !Mathf.Approximately(pipeline.renderScale, settings.RenderScale)) pipeline.renderScale = settings.RenderScale;
 
