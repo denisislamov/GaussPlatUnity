@@ -189,50 +189,22 @@ namespace GSplat.Editor
         /// <summary>A real Canvas in the scene (visible in the hierarchy, editable) with one button that loads the next scene of the build.</summary>
         private static void AddSceneSwitchCanvas()
         {
-            var eventSystem = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem), typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
+            UiFactory.EnsureEventSystem(null);
 
-            var canvasObject = new GameObject("Scene Switch Canvas", typeof(Canvas), typeof(UnityEngine.UI.CanvasScaler), typeof(UnityEngine.UI.GraphicRaycaster));
-            Canvas canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 110;
-            var scaler = canvasObject.GetComponent<UnityEngine.UI.CanvasScaler>();
+            Canvas canvas = UiFactory.CreateCanvas("Scene Switch Canvas", null, 110);
+            // Scales with the screen (unlike the viewer canvas, which is dp-based): the button is a big touch target on any phone.
+            var scaler = canvas.GetComponent<UnityEngine.UI.CanvasScaler>();
             scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080f, 1920f);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var safeObject = new GameObject("Safe Area", typeof(RectTransform), typeof(SafeAreaPanel));
-            safeObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform safeArea = UiFactory.CreateSafeArea(canvas.transform);
+            // Bottom center, above the home bar.
+            UnityEngine.UI.Button button = UiFactory.CreateButton(safeArea, "Next Scene Button", new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 40f), new Vector2(520f, 110f), 0.8f, "Next scene", 40);
 
-            var buttonObject = new GameObject("Next Scene Button", typeof(UnityEngine.UI.Image), typeof(UnityEngine.UI.Button), typeof(NextSceneButton));
-            buttonObject.transform.SetParent(safeObject.transform, false);
-            var rect = (RectTransform)buttonObject.transform;
-            rect.anchorMin = new Vector2(0.5f, 0f);
-            rect.anchorMax = new Vector2(0.5f, 0f);
-            rect.pivot = new Vector2(0.5f, 0f);
-            rect.anchoredPosition = new Vector2(0f, 40f);
-            rect.sizeDelta = new Vector2(520f, 110f);
-            var image = buttonObject.GetComponent<UnityEngine.UI.Image>();
-            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
-            image.type = UnityEngine.UI.Image.Type.Sliced;
-            image.color = new Color(1f, 1f, 1f, 0.8f);
-
-            var labelObject = new GameObject("Label", typeof(UnityEngine.UI.Text));
-            labelObject.transform.SetParent(buttonObject.transform, false);
-            var labelRect = (RectTransform)labelObject.transform;
-            labelRect.anchorMin = Vector2.zero;
-            labelRect.anchorMax = Vector2.one;
-            labelRect.offsetMin = Vector2.zero;
-            labelRect.offsetMax = Vector2.zero;
-            var label = labelObject.GetComponent<UnityEngine.UI.Text>();
-            label.font = AssetDatabase.GetBuiltinExtraResource<Font>("LegacyRuntime.ttf");
-            label.fontSize = 40;
-            label.alignment = TextAnchor.MiddleCenter;
-            label.color = Color.black;
-            label.text = "Next scene";
-            label.raycastTarget = false;
-
-            var serializedButton = new SerializedObject(buttonObject.GetComponent<NextSceneButton>());
-            serializedButton.FindProperty("label").objectReferenceValue = label;
+            var nextScene = button.gameObject.AddComponent<NextSceneButton>();
+            var serializedButton = new SerializedObject(nextScene);
+            serializedButton.FindProperty("label").objectReferenceValue = button.GetComponentInChildren<UnityEngine.UI.Text>();
             serializedButton.ApplyModifiedPropertiesWithoutUndo();
         }
 
