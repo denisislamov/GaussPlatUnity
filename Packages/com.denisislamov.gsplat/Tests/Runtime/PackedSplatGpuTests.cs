@@ -51,17 +51,17 @@ namespace GSplat.Tests
                     shader.SetInt("_SplatCount", count);
                     shader.Dispatch(kernel, (count + 63) / 64, 1, 1);
 
-                    AsyncGPUReadbackRequest positionRead = AsyncGPUReadback.Request(positions);
-                    AsyncGPUReadbackRequest scaleRead = AsyncGPUReadback.Request(scales);
-                    AsyncGPUReadbackRequest rotationRead = AsyncGPUReadback.Request(rotations);
-                    AsyncGPUReadbackRequest colorRead = AsyncGPUReadback.Request(colors);
-                    while (!positionRead.done || !scaleRead.done || !rotationRead.done || !colorRead.done) yield return null;
-                    Assert.IsFalse(positionRead.hasError || scaleRead.hasError || rotationRead.hasError || colorRead.hasError, "readback failed");
-
-                    NativeArray<float4> gpuPositions = positionRead.GetData<float4>();
-                    NativeArray<float4> gpuScales = scaleRead.GetData<float4>();
-                    NativeArray<float4> gpuRotations = rotationRead.GetData<float4>();
-                    NativeArray<float4> gpuColors = colorRead.GetData<float4>();
+                    // Synchronous readback: AsyncGPUReadback on these buffers reported hasError now and then in batch
+                    // mode (no window, so frames are not flushed the usual way); GetData waits for the dispatch and
+                    // always returns the data.
+                    var gpuPositions = new float4[count];
+                    var gpuScales = new float4[count];
+                    var gpuRotations = new float4[count];
+                    var gpuColors = new float4[count];
+                    positions.GetData(gpuPositions);
+                    scales.GetData(gpuScales);
+                    rotations.GetData(gpuRotations);
+                    colors.GetData(gpuColors);
 
                     for (int splatIndex = 0; splatIndex < count; splatIndex += 7)
                     {

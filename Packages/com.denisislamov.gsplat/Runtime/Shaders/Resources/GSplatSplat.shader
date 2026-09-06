@@ -65,64 +65,10 @@ Shader "GSplat/Splat"
                 return o;
             }
 
-            Varyings Vertex(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
+            // The splat's color for this view: base color, the view-dependent SH term (in the object's frame),
+            // brightness, the color-space conversion and the chunk debug view.
+            float3 SplatColor(GSplatUnpacked s, uint splatIndex, uint chunkIndex, float3 positionWS, float3x3 objectToWorld)
             {
-                uint slot = instanceId;
-                uint splatIndex = GSplatTexelToUint(_Order.Load(uint3(slot % GSPLAT_TEXTURE_WIDTH, slot / GSPLAT_TEXTURE_WIDTH, 0)));
-                GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
-                uint chunkIndex = splatIndex / GSPLAT_CHUNK_SIZE;
-                float3 positionOS = GSplatChunkPosition(_ChunkRanges, chunkIndex, s.position);
-
-                float3 positionWS = TransformObjectToWorld(positionOS);
-                float3 positionVS = TransformWorldToView(positionWS);
-                // Unity view space looks down -Z: anything with z >= -near is behind the near plane.
-                if (positionVS.z >= -_ProjectionParams.y) return Culled();
-
-                float4 positionCS = TransformWViewToHClip(positionVS);
-                float2 ndc = positionCS.xy / positionCS.w;
-
-                float3x3 objectToWorld = (float3x3)UNITY_MATRIX_M;
-                float3x3 worldToView = (float3x3)UNITY_MATRIX_V;
-                float3x3 covarianceWS = GSplatWorldCovariance(objectToWorld, s.rotation, s.scale);
-                float2 focal = float2(UNITY_MATRIX_P._m00 * _ScreenParams.x * 0.5, UNITY_MATRIX_P._m11 * _ScreenParams.y * 0.5);
-                float3 cov = GSplatProjectCovariance(covarianceWS, worldToView, positionVS, focal);
-
-                // Low-pass filter: every splat covers at least ~one pixel so thin ones do not flicker. With
-                // mip-splatting data the opacity is scaled down to keep the total energy (Yu et al. 2023, eq. 7);
-                // classic 3DGS data was trained with the dilation and no compensation, so we reproduce that.
-                float detBefore = cov.x * cov.z - cov.y * cov.y;
-                // Own radius (largest eigenvalue before dilation): below the threshold the splat is skipped. The
-                // key pass already dropped most of these with a looser bound; this is the exact check.
-                float midBefore = 0.5 * (cov.x + cov.z);
-                float lambdaBefore = midBefore + sqrt(max(midBefore * midBefore - detBefore, 0.0));
-                if (_MaxStdDev * sqrt(lambdaBefore) < _MinPixelRadius) return Culled();
-                cov.x += _Dilation;
-                cov.z += _Dilation;
-                float detAfter = cov.x * cov.z - cov.y * cov.y;
-                float compensation = _Antialiased != 0 && _Dilation > 0.0 ? sqrt(max(detBefore / detAfter, 0.0)) : 1.0;
-
-                float2 majorAxis;
-                float lambdaMajor, lambdaMinor;
-                GSplatEllipseAxes(cov, majorAxis, lambdaMajor, lambdaMinor);
-                float radiusMajor = _MaxStdDev * sqrt(lambdaMajor);
-                float radiusMinor = _MaxStdDev * sqrt(lambdaMinor);
-                if (_MaxPixelRadius > 0.0 && radiusMajor > _MaxPixelRadius)
-                {
-                    // Same shape, smaller footprint: the falloff is compressed into the clamped quad, opacity unchanged.
-                    float shrink = _MaxPixelRadius / radiusMajor;
-                    radiusMajor *= shrink;
-                    radiusMinor *= shrink;
-                }
-
-                // Off screen only when the whole quad is: big background splats often have their center outside the view.
-                if (any(abs(ndc) > 1.0 + radiusMajor * 2.0 / _ScreenParams.xy)) return Culled();
-
-                float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
-                float2 minorAxis = float2(-majorAxis.y, majorAxis.x);
-                float2 offsetPixels = corner.x * majorAxis * radiusMajor + corner.y * minorAxis * radiusMinor;
-                // Pixels to clip space: NDC spans 2 units over the screen, and clip = NDC * w.
-                positionCS.xy += offsetPixels * (2.0 / _ScreenParams.xy) * positionCS.w;
-
                 float3 color = s.color;
                 if (_ShDegree > 0 && _ShTexelsPerSplat > 0)
                 {
@@ -142,11 +88,47 @@ Shader "GSplat/Splat"
                 }
 
                 if (_DebugMode == 1) color = GSplatChunkDebugColor(chunkIndex);
+                return color;
+            }
 
+            Varyings Vertex(uint vertexId : SV_VertexID, uint instanceId : SV_InstanceID)
+            {
+                // 1. Load: the order texture says which splat this instance is; the packed texture holds the splat.
+                uint slot = instanceId;
+                uint splatIndex = GSplatTexelToUint(_Order.Load(uint3(slot % GSPLAT_TEXTURE_WIDTH, slot / GSPLAT_TEXTURE_WIDTH, 0)));
+                GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
+                uint chunkIndex = splatIndex / GSPLAT_CHUNK_SIZE;
+                float3 positionOS = GSplatChunkPosition(_ChunkRanges, chunkIndex, s.position);
+
+                // 2. Project the center. Unity view space looks down -Z: anything with z >= -near is behind the near plane.
+                float3 positionWS = TransformObjectToWorld(positionOS);
+                float3 positionVS = TransformWorldToView(positionWS);
+                if (positionVS.z >= -_ProjectionParams.y) return Culled();
+
+                float4 positionCS = TransformWViewToHClip(positionVS);
+                float2 ndc = positionCS.xy / positionCS.w;
+
+                // 3. Project the covariance and turn it into a quad (dilation, size clamp, sub-pixel cull).
+                float3x3 objectToWorld = (float3x3)UNITY_MATRIX_M;
+                float3x3 worldToView = (float3x3)UNITY_MATRIX_V;
+                float3x3 covarianceWS = GSplatWorldCovariance(objectToWorld, s.rotation, s.scale);
+                float2 focal = float2(UNITY_MATRIX_P._m00 * _ScreenParams.x * 0.5, UNITY_MATRIX_P._m11 * _ScreenParams.y * 0.5);
+                float3 cov = GSplatProjectCovariance(covarianceWS, worldToView, positionVS, focal);
+                GSplatFootprint fp = GSplatScreenFootprint(cov, _MaxStdDev, _MinPixelRadius, _Dilation, _MaxPixelRadius, _Antialiased != 0);
+                if (!fp.visible) return Culled();
+
+                // 4. Off screen only when the whole quad is: big background splats often have their center outside the view.
+                if (any(abs(ndc) > 1.0 + fp.radiusMajor * 2.0 / _ScreenParams.xy)) return Culled();
+
+                // 5. This vertex's corner. Pixels to clip space: NDC spans 2 units over the screen, and clip = NDC * w.
+                float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
+                positionCS.xy += GSplatCornerOffsetPixels(corner, fp) * (2.0 / _ScreenParams.xy) * positionCS.w;
+
+                // 6. Color and opacity.
                 Varyings o;
                 o.positionCS = positionCS;
                 o.local = (half2)(corner * _MaxStdDev);
-                o.color = (half4)float4(color, s.alpha * compensation * _Opacity);
+                o.color = (half4)float4(SplatColor(s, splatIndex, chunkIndex, positionWS, objectToWorld), s.alpha * fp.compensation * _Opacity);
                 return o;
             }
 
