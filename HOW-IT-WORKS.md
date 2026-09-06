@@ -52,6 +52,12 @@ After decoding, `GsplatBuilder` turns the cloud into what the GPU wants:
 The result (`GsplatData`) is saved as the `.gsplat` payload inside a `GaussianSplatAsset`, or built at runtime by
 `SplatLoader` from a URL.
 
+The same scene has four shapes on its way to the screen, and the names follow the file format rather than each
+other, so here they are side by side: `SplatCloud` is the decoded scene as float arrays, one per attribute;
+`GsplatData` is the packed, chunked version of it, exactly what the `.gsplat` file holds; `SplatGpuData` is that
+data uploaded into textures and buffers; `GaussianSplatAsset` is the Unity asset that stores a `GsplatData` payload
+and hands out a fresh copy on load.
+
 ## Why everything lives in textures
 
 Unity cannot create integer-format `Texture2D`s, and WebGL2 / OpenGL ES 3.0 vertex shaders cannot read
