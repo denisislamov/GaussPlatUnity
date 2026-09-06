@@ -1,5 +1,7 @@
 # GaussPlatUnity
 
+![A generated study room rendered as Gaussian splats in the Unity editor, with an ordinary URP cube standing on the desk](.github/demo.gif)
+
 A Gaussian splat renderer for Unity 6 and URP. I started it because I wanted to show
 generated 3D worlds on phones and in the browser,
 inside normal Unity scenes, and the existing Unity splat renderers either need D3D12/Metal/Vulkan
