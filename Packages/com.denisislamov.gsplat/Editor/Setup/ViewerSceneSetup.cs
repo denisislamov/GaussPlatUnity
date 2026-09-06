@@ -41,6 +41,7 @@ namespace GSplat.Editor
 
             var world = new GameObject("World");
             world.AddComponent<WorldLoader>();
+            world.AddComponent<WebPageBridge>();
 
             var viewer = new GameObject("Viewer");
             viewer.AddComponent<SplatViewerUi>();

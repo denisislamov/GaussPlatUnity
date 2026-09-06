@@ -3,6 +3,26 @@
 Versions follow semantic versioning. The package version lives in `Packages/com.denisislamov.gsplat/package.json`
 and in `GSplatVersion.Current`; a test keeps them equal. Tags on `main` mark releases.
 
+## Unreleased
+
+- Internal: readability refactoring with no change in behavior or performance (verified against golden images
+  and the frame-time tests from 0.2.0).
+- Web page hooks (`LoadFromPage`, `PauseFromPage`, `ResumeFromPage`) moved from `WorldLoader` to a small
+  `WebPageBridge` component on the same object; the page template is unchanged.
+
+Known limits, each marked with a TODO in the code:
+
+- SPZ version 4 (zstd) is recognized and refused; there is no managed zstd decoder yet.
+- GPU rotation is 8-bit "first three"; colors above 1.0 (HDR trainers) are clamped when packing.
+- One SH texture caps the splat count at SH degree 3; a second texture would lift it.
+- Building the GPU layout runs Burst jobs on the main thread (100 to 300 ms per 500k); on the web the decoders
+  are not time-sliced yet, so a big file freezes the page for that long.
+- The CPU copy of the packed data stays in memory after the upload (8 MB per 500k).
+- The level crossfade draws both levels for three seconds; a dithered swap would be cheaper on weak phones.
+- The vertex clip of culled splats has not been measured on Mali; it may disable some tile-based fast paths.
+- The sort order texture is passed to the draw pass as a raw RenderTexture, not an RTHandle; RenderGraph cannot
+  reorder the two passes, so it is safe, but an import would be cleaner.
+
 ## 0.2.0
 
 - Sorting by distance to the camera (Spark's choice), logarithmic 16-bit depth keys, frustum and sub-pixel

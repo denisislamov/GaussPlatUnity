@@ -19,12 +19,15 @@ namespace GSplat
 
         /// <summary>Meters added on every side of the center bounds so the padded bounds contain the splats' extents.</summary>
         public float Padding;
-        private int padding1;
-        private int padding2;
+
+        // Layout fillers only (unrelated to Padding above): they keep every float3 on a 16-byte boundary, which is what
+        // the HLSL side of the chunk buffer expects. Always zero.
+        private int reserved1;
+        private int reserved2;
         public float3 BoundsMin;
-        private float padding3;
+        private float reserved3;
         public float3 BoundsMax;
-        private float padding4;
+        private float reserved4;
 
         public float3 Center => (BoundsMin + BoundsMax) * 0.5f;
 
@@ -41,10 +44,10 @@ namespace GSplat
             Padding = padding;
             BoundsMin = boundsMin - padding;
             BoundsMax = boundsMax + padding;
-            padding1 = 0;
-            padding2 = 0;
-            padding3 = 0f;
-            padding4 = 0f;
+            reserved1 = 0;
+            reserved2 = 0;
+            reserved3 = 0f;
+            reserved4 = 0f;
         }
 
         /// <summary>Position from the 16-bit fractions stored in a packed splat.</summary>

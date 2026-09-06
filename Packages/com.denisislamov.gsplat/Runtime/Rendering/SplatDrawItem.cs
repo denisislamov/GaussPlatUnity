@@ -6,7 +6,6 @@ namespace GSplat
     /// <summary>One renderer's draw for one camera, prepared on the main thread and consumed by the render pass.</summary>
     public struct SplatDrawItem
     {
-        public GaussianSplatRenderer Renderer;
         public ISplatSorter Sorter;
         public Matrix4x4 LocalToWorld;
         public MaterialPropertyBlock Properties;

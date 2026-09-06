@@ -220,15 +220,11 @@ namespace GSplat
         private void Update()
         {
             if (gpu == null || gpu.IsFullyUploaded) return;
+            // TODO: once the upload is done and the sorter is the GPU one, the CPU copy of the packed data is dead weight
+            // (8 MB per 500k). Free it when nothing else (debug tools, a CPU-sort fallback) needs it.
             for (int upload = 0; upload < uploadChunksPerFrame && !gpu.IsFullyUploaded; upload++)
             {
                 gpu.UploadNextChunk();
-            }
-
-            if (gpu.IsFullyUploaded && ownsData && sorter is GpuCountingSorter)
-            {
-                // TODO: on the GPU path the CPU copy of the packed data is now dead weight (8 MB per 500k). Free it here
-                // once nothing else (debug tools, re-sorting on the CPU after a fallback) needs it.
             }
         }
 
@@ -376,7 +372,6 @@ namespace GSplat
             LastDrawnSplatCount = sorter.OrderedSplatCount;
             item = new SplatDrawItem
             {
-                Renderer = this,
                 Sorter = sorter,
                 LocalToWorld = localToWorld,
                 Properties = properties,

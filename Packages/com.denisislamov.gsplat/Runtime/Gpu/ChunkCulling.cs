@@ -12,6 +12,8 @@ namespace GSplat
     /// </summary>
     public static class ChunkCulling
     {
+        // Shared scratch for the frustum planes: culling runs on the main thread only (from the renderer's prepare
+        // step), so one static array serves every renderer without allocating per frame.
         private static readonly Plane[] PlaneScratch = new Plane[6];
 
         /// <summary>Appends the indices of chunks that intersect the camera frustum to <paramref name="visible"/>.</summary>
