@@ -150,6 +150,20 @@ namespace GSplat.Tests
             yield return RenderAndCompare("reference400_debug_chunks", 0, SplatSorterKind.Auto, GaussianSplatRenderer.DefaultMaxStdDev, false, r => r.DebugMode = SplatDebugMode.ChunkColors);
         }
 
+        /// <summary>P2: one triangle per splat must shade exactly the pixels the quad shades (the fragment cut keeps the square).</summary>
+        [UnityTest]
+        public IEnumerator TriangleModeRendersTheQuadImage()
+        {
+            yield return RenderAndCompare("reference400_gpu", 0, SplatSorterKind.Gpu, GaussianSplatRenderer.DefaultMaxStdDev, false, r => r.VerticesPerSplat = 3);
+        }
+
+        /// <summary>P9: with the alpha clip off the image must stay within tolerance (fragments under 1/255 cannot change an 8-bit target).</summary>
+        [UnityTest]
+        public IEnumerator NoAlphaClipRendersTheSameImage()
+        {
+            yield return RenderAndCompare("reference400_gpu", 0, SplatSorterKind.Gpu, GaussianSplatRenderer.DefaultMaxStdDev, false, r => r.ClipLowAlpha = false);
+        }
+
         [UnityTest]
         public IEnumerator GpuAndCpuSortersRenderTheSameImage()
         {

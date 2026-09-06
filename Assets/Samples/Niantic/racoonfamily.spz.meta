@@ -14,3 +14,4 @@ ScriptedImporter:
     PruneAlphaBelow: 0.003921569
     MaxSplatCount: 0
     SpatialSort: 1
+    OrderChunksByImportance: 1

@@ -11,14 +11,22 @@
 #pragma kernel ComputeKeys
 #pragma kernel PrefixSum
 #pragma kernel Scatter
+// Key width as a variant, not a uniform: with constant loop bounds the prefix scan unrolls, with a uniform it did not
+// and the 16-bit sort got measurably slower (P5 measurement on the Mac).
+#pragma multi_compile __ GSPLAT_KEY_BITS_12
 
 #include "../GSplatCore.hlsl"
 
-#define BUCKET_COUNT 65536
-#define MAX_KEY 65535
+#ifdef GSPLAT_KEY_BITS_12
+    #define BUCKET_COUNT 4096
+    #define MAX_KEY 4095
+#else
+    #define BUCKET_COUNT 65536
+    #define MAX_KEY 65535
+#endif
 #define EMPTY_KEY 0xFFFFFFFFu
 #define THREADS 128
-#define BUCKETS_PER_THREAD (BUCKET_COUNT / THREADS) // 512
+#define BUCKETS_PER_THREAD (BUCKET_COUNT / THREADS) // 512 or 32
 #define CHUNK_SIZE 65536u
 
 // Mirrors SplatChunkInfo (48 bytes): count, padding (float bits), 2 unused, padded bounds min, padded bounds max.
@@ -35,12 +43,14 @@ float3 ChunkPositionExtent(ChunkInfo chunk) { return max(chunk.boundsMax.xyz - a
 Texture2D<float4> _Splats;
 StructuredBuffer<ChunkInfo> _Chunks;
 StructuredBuffer<uint> _VisibleChunks;
-RWStructuredBuffer<uint> _Keys;           // per slot: 0..65535 or EMPTY_KEY
+StructuredBuffer<uint> _ChunkBudgets;     // P3: per visible chunk, how many of its (importance-ordered) splats may draw
+RWStructuredBuffer<uint> _Keys;           // per slot: 0.._MaxKey or EMPTY_KEY
 RWStructuredBuffer<uint> _Histogram;      // per bucket: count after ComputeKeys, first output slot after PrefixSum
 RWTexture2D<float4> _Order;               // RGBA8: slot -> splat index as 4 bytes
 RWStructuredBuffer<uint> _DrawArgs;       // indirect draw args; [1] = instance count = splats that got a slot
 
 uint _SlotCount;                          // visible chunks x 65536
+int _UseBudgets;                          // 1 = _ChunkBudgets is valid
 float3 _CameraPosition;                   // in the splat object's local space
 float3 _CameraForward;
 float _LogMinDepth;        // log of the nearest depth of the key range (see SplatSortKeys.cs: log depth keys)
@@ -73,7 +83,9 @@ void ComputeKeys(uint3 id : SV_DispatchThreadID)
     uint chunkIndex = _VisibleChunks[slot / CHUNK_SIZE];
     uint local = slot % CHUNK_SIZE;
     ChunkInfo chunk = _Chunks[chunkIndex];
-    if (local >= chunk.countAndPadding.x)
+    uint limit = chunk.countAndPadding.x;
+    if (_UseBudgets != 0) limit = min(limit, _ChunkBudgets[slot / CHUNK_SIZE]);
+    if (local >= limit)
     {
         _Keys[slot] = EMPTY_KEY;
         return;
@@ -96,11 +108,11 @@ void ComputeKeys(uint3 id : SV_DispatchThreadID)
     InterlockedAdd(_Histogram[key], 1);
 }
 
-// One thread group turns the histogram into an exclusive prefix sum. Each thread owns 512 consecutive
-// buckets: it sums them, the 128 partial sums are scanned in groupshared memory (Hillis-Steele, 7 steps),
-// then each thread writes the running offsets of its 512 buckets. ~1500 memory operations per thread on a
-// single group is a compromise: short in absolute terms (tens of microseconds) and no second dispatch or
-// wave intrinsics needed.
+// One thread group turns the histogram into an exclusive prefix sum. Each thread owns bucketsPerThread
+// consecutive buckets (512 for 16-bit keys, 32 for 12-bit): it sums them, the 128 partial sums are scanned in
+// groupshared memory (Hillis-Steele, 7 steps), then each thread writes the running offsets of its buckets.
+// ~1500 memory operations per thread on a single group is a compromise for 16 bits: short in absolute terms
+// (tens of microseconds) and no second dispatch or wave intrinsics needed; 12-bit keys cut it 16x.
 groupshared uint partialSums[THREADS];
 
 [numthreads(THREADS, 1, 1)]
@@ -126,10 +138,10 @@ void PrefixSum(uint3 groupThreadId : SV_GroupThreadID)
     }
 
     uint running = thread > 0 ? partialSums[thread - 1] : 0;
-    for (uint bucket = 0; bucket < BUCKETS_PER_THREAD; bucket++)
+    for (uint outputBucket = 0; outputBucket < BUCKETS_PER_THREAD; outputBucket++)
     {
-        uint count = _Histogram[firstBucket + bucket];
-        _Histogram[firstBucket + bucket] = running;
+        uint count = _Histogram[firstBucket + outputBucket];
+        _Histogram[firstBucket + outputBucket] = running;
         running += count;
     }
 

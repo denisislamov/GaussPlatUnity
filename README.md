@@ -26,7 +26,9 @@ at 1080x1920 in about 6 ms on Apple Silicon, and matches the Spark web viewer at
 same camera.
 
 See [QUICKSTART.md](QUICKSTART.md) to get a scene on screen in a few minutes, [HOW-IT-WORKS.md](HOW-IT-WORKS.md)
-for the long explanation of the pipeline, and [CHANGELOG.md](CHANGELOG.md) for what changed between versions.
+for the long explanation of the pipeline, [DEBUG-MENU.md](DEBUG-MENU.md) for the in-app menu that lets you try
+every performance knob on a phone or in a browser, and [CHANGELOG.md](CHANGELOG.md) for what changed between
+versions.
 
 Requires Unity 6000.3.19f1. The package lives in `Packages/com.denisislamov.gsplat` and can be
 copied into any URP project. MIT license. Sample scenes in `Assets/Samples/Niantic` are from the

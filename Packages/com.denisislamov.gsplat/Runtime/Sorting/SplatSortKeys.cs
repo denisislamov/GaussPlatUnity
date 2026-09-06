@@ -10,9 +10,22 @@ namespace GSplat
     /// </summary>
     public static class SplatSortKeys
     {
+        /// <summary>The default: 65 536 buckets. 12 bits (4 096) is the cheaper option for phones and the web, see BucketCountFor.</summary>
         public const int KeyBits = 16;
+        public const int MinKeyBits = 8;
+        public const int MaxKeyBits = 16;
         public const int BucketCount = 1 << KeyBits;
         public const uint MaxKey = BucketCount - 1;
+
+        public static int BucketCountFor(int keyBits)
+        {
+            return 1 << math.clamp(keyBits, MinKeyBits, MaxKeyBits);
+        }
+
+        public static uint MaxKeyFor(int keyBits)
+        {
+            return (uint)BucketCountFor(keyBits) - 1;
+        }
 
         /// <summary>Marks a thread slot that maps to no splat (the tail of a partial chunk); never counted or scattered.</summary>
         public const uint EmptyKey = 0xFFFFFFFF;
@@ -44,8 +57,14 @@ namespace GSplat
         /// </summary>
         public static uint DepthToKey(float depth, float logMinDepth, float inverseLogDepthRange)
         {
+            return DepthToKey(depth, logMinDepth, inverseLogDepthRange, MaxKey);
+        }
+
+        /// <summary>Same mapping onto a narrower key: <paramref name="maxKey"/> = buckets - 1 (see <see cref="MaxKeyFor"/>).</summary>
+        public static uint DepthToKey(float depth, float logMinDepth, float inverseLogDepthRange, uint maxKey)
+        {
             float normalized = math.saturate((math.log(math.max(depth, MinKeyDepth)) - logMinDepth) * inverseLogDepthRange);
-            return MaxKey - (uint)(normalized * MaxKey + 0.5f);
+            return maxKey - (uint)(normalized * maxKey + 0.5f);
         }
 
         /// <summary>The two numbers DepthToKey needs, from a depth range.</summary>

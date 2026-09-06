@@ -31,6 +31,12 @@ namespace GSplat
             Application.targetFrameRate = 1;
         }
 
+        /// <summary>?bench=single or ?bench=matrix: run the benchmark once the world is ready (the runner waits for it).</summary>
+        public void RunBenchmarkFromPage(string kind)
+        {
+            SplatBenchmark.Run(kind == "matrix" ? SplatBenchmark.KnobMatrix() : SplatBenchmark.SingleVariant());
+        }
+
         public void ResumeFromPage(string unused)
         {
             SplatQualityProfile profile = loader.ActiveProfile;

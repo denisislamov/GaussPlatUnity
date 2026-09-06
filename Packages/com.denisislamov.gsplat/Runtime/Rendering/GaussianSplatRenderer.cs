@@ -35,6 +35,9 @@ namespace GSplat
         private static readonly int MinPixelRadiusId = Shader.PropertyToID("_MinPixelRadius");
         private static readonly int DilationId = Shader.PropertyToID("_Dilation");
         private static readonly int MaxPixelRadiusId = Shader.PropertyToID("_MaxPixelRadius");
+        private static readonly int TriangleModeId = Shader.PropertyToID("_TriangleMode");
+        private static readonly int CheapGaussianId = Shader.PropertyToID("_CheapGaussian");
+        private static readonly int ClipLowAlphaId = Shader.PropertyToID("_ClipLowAlpha");
 
         [SerializeField, Tooltip("Imported .spz/.ply. Leave empty when the data is set from code (SetData).")]
         private GaussianSplatAsset asset;
@@ -69,6 +72,27 @@ namespace GSplat
         [SerializeField, Min(1), Tooltip("Chunks (65k splats, 1 MB) uploaded per frame. Higher = faster appearance, longer frame.")]
         private int uploadChunksPerFrame = 2;
         [SerializeField] private SplatDebugMode debugMode = SplatDebugMode.None;
+
+        [Header("Performance experiments")]
+        [SerializeField, Range(3, 4), Tooltip("P2: 4 = quad (two triangles), 3 = one triangle per splat; half the primitives through a tile-based GPU's tiler, same pixels.")]
+        private int verticesPerSplat = 4;
+        [SerializeField, Min(0f), Tooltip("P3: splats a chunk may draw per pixel of its projected area (needs importance-ordered data). 0 = no budget.")]
+        private float chunkBudgetSplatsPerPixel = 0f;
+        [SerializeField, Min(0), Tooltip("P3: a chunk never gets fewer splats than this when the budget is on.")]
+        private int chunkBudgetFloor = 2000;
+        [SerializeField, Tooltip("P9: polynomial falloff instead of exp in the fragment shader (slightly harder edges).")]
+        private bool cheapGaussian = false;
+        [SerializeField, Tooltip("P9: discard fragments under 1/255 alpha. Saves blend bandwidth; may disable tiler fast paths on Mali.")]
+        private bool clipLowAlpha = true;
+        [SerializeField, Range(SplatSortKeys.MinKeyBits, SplatSortKeys.MaxKeyBits), Tooltip("P5/P6: depth key width. 16 = 65k buckets, 12 = 4k buckets (cheaper prefix scan and histogram).")]
+        private int sortKeyBits = SplatSortKeys.KeyBits;
+        [SerializeField, Tooltip("P6: CPU sorter spreads one sort over several frames (for the web, where jobs run on the main thread).")]
+        private bool timeSlicedCpuSort = false;
+        [SerializeField, Min(4096)] private int cpuSortSlotsPerFrame = 131072;
+        [SerializeField, Min(0f), Tooltip("P5: camera movement (local units) that forces a new sort.")]
+        private float sortMoveThreshold = 0.02f;
+        [SerializeField, Min(0f), Tooltip("P5: camera turn (degrees) that forces a new sort.")]
+        private float sortAngleThreshold = 0.5f;
 
         private GsplatData data;
         private bool ownsData;
@@ -118,6 +142,22 @@ namespace GSplat
             foreach (SplatCameraState state in cameraStates.Values) state.Policy.Reset();
         }
         public SplatDebugMode DebugMode { get => debugMode; set => debugMode = value; }
+        public int VerticesPerSplat { get => verticesPerSplat; set => verticesPerSplat = value == 3 ? 3 : 4; }
+        public float ChunkBudgetSplatsPerPixel { get => chunkBudgetSplatsPerPixel; set => chunkBudgetSplatsPerPixel = Mathf.Max(0f, value); }
+        public int ChunkBudgetFloor { get => chunkBudgetFloor; set => chunkBudgetFloor = Mathf.Max(0, value); }
+        public bool CheapGaussian { get => cheapGaussian; set => cheapGaussian = value; }
+        public bool ClipLowAlpha { get => clipLowAlpha; set => clipLowAlpha = value; }
+        public int SortKeyBits { get => sortKeyBits; set => sortKeyBits = Mathf.Clamp(value, SplatSortKeys.MinKeyBits, SplatSortKeys.MaxKeyBits); }
+        public bool TimeSlicedCpuSort { get => timeSlicedCpuSort; set => timeSlicedCpuSort = value; }
+        public int CpuSortSlotsPerFrame { get => cpuSortSlotsPerFrame; set => cpuSortSlotsPerFrame = Mathf.Max(4096, value); }
+        public float SortMoveThreshold { get => sortMoveThreshold; set => sortMoveThreshold = Mathf.Max(0f, value); }
+        public float SortAngleThreshold { get => sortAngleThreshold; set => sortAngleThreshold = Mathf.Max(0f, value); }
+
+        /// <summary>The sorter the current settings ask for; compared against the live one every frame, see EnsureSorterMatchesSettings.</summary>
+        private SplatSorterOptions WantedSorterOptions => new SplatSorterOptions { Kind = sorterKind, KeyBits = sortKeyBits, TimeSliced = timeSlicedCpuSort, SlotsPerFrame = cpuSortSlotsPerFrame };
+
+        /// <summary>Indices per splat instance: 6 for the quad, 3 for the triangle mode.</summary>
+        public int IndexCount => verticesPerSplat == 3 ? 3 : 6;
         public int UploadChunksPerFrame { get => uploadChunksPerFrame; set => uploadChunksPerFrame = Mathf.Max(1, value); }
 
         /// <summary>World-space bounds of the scene (object bounds transformed), for culling and camera framing.</summary>
@@ -213,15 +253,35 @@ namespace GSplat
 
         private ISplatSorter CreateSorter()
         {
+            SplatSorterOptions options = WantedSorterOptions;
             bool wantGpu = sorterKind == SplatSorterKind.Gpu || (sorterKind == SplatSorterKind.Auto && GpuCountingSorter.IsSupported);
             if (wantGpu)
             {
                 ComputeShader shader = GpuCountingSorter.LoadShader();
-                if (shader != null) return new GpuCountingSorter(shader, data.SplatCount);
+                if (shader != null) return new GpuCountingSorter(shader, data.SplatCount, options);
                 if (sorterKind == SplatSorterKind.Gpu) Debug.LogWarning("GSplat: compute shaders are unavailable here; sorting on the CPU instead.", this);
             }
 
-            return new CpuCountingSorter(data.SplatCount);
+            return new CpuCountingSorter(data.SplatCount, options);
+        }
+
+        /// <summary>
+        /// The debug menu changes sorter settings at runtime; a sorter is sized by its key width and cannot change in
+        /// place, so when the wanted options differ from the live sorter's, it is rebuilt (one frame without an order).
+        /// </summary>
+        private void EnsureSorterMatchesSettings()
+        {
+            SplatSorterOptions live = sorter switch
+            {
+                GpuCountingSorter gpuSorter => gpuSorter.Options,
+                CpuCountingSorter cpuSorter => cpuSorter.Options,
+                _ => WantedSorterOptions
+            };
+            if (live.Equals(WantedSorterOptions)) return;
+
+            sorter.Dispose();
+            sorter = CreateSorter();
+            foreach (SplatCameraState state in cameraStates.Values) state.Policy.Reset();
         }
 
         private void ReleaseResources()
@@ -270,7 +330,10 @@ namespace GSplat
             item = default;
             if (camera == null || gpu == null || gpu.UploadedChunkCount == 0) return false;
 
+            EnsureSorterMatchesSettings();
             SplatCameraState state = StateFor(camera);
+            state.Policy.MinMoveDistance = sortMoveThreshold;
+            state.Policy.MinRotationDegrees = sortAngleThreshold;
             Matrix4x4 localToWorld = transform.localToWorldMatrix;
             int visibleSplats = CollectVisibleChunks(camera, localToWorld, state, out int visibleHash);
             if (state.VisibleChunkCount == 0)
@@ -294,6 +357,7 @@ namespace GSplat
             if (sorter.OrderedSplatCount == 0) return false; // CPU sorter: first result not in yet
 
             FillProperties();
+            if (sorter is GpuCountingSorter indirect) indirect.SetIndexCount(IndexCount);
             LastDrawnSplatCount = sorter.OrderedSplatCount;
             item = new SplatDrawItem
             {
@@ -301,6 +365,7 @@ namespace GSplat
                 LocalToWorld = localToWorld,
                 Properties = properties,
                 InstanceCount = sorter.OrderedSplatCount,
+                IndexCount = IndexCount,
                 DistanceToCamera = Vector3.Distance(camera.transform.position, WorldBounds.center)
             };
             return true;
@@ -368,6 +433,7 @@ namespace GSplat
                 MinPixelRadius = minPixelRadius
             };
 
+            bool useBudgets = FillChunkBudgets(camera, localToWorld, state, view.FocalPixelsY);
             return new SplatSortInput
             {
                 Data = data,
@@ -375,8 +441,43 @@ namespace GSplat
                 VisibleChunks = visible,
                 VisibleChunkBuffer = state.VisibleChunkBuffer,
                 VisibleSplatCount = visibleSplats,
+                ChunkBudgets = useBudgets ? state.ChunkBudgets.GetSubArray(0, state.VisibleChunkCount) : default,
+                ChunkBudgetBuffer = useBudgets ? state.ChunkBudgetBuffer : null,
                 View = view
             };
+        }
+
+        /// <summary>
+        /// P3: how many splats each visible chunk may draw. The chunk's bounding sphere is projected to a pixel radius
+        /// (focal x radius / distance), the budget is its pixel area times <see cref="ChunkBudgetSplatsPerPixel"/> with
+        /// <see cref="ChunkBudgetFloor"/> as the minimum; a chunk the camera is inside gets everything. Only valid when
+        /// the data is importance-ordered inside the chunks, otherwise the prefix would be an arbitrary subset.
+        /// </summary>
+        private bool FillChunkBudgets(Camera camera, Matrix4x4 localToWorld, SplatCameraState state, float focalPixelsY)
+        {
+            if (chunkBudgetSplatsPerPixel <= 0f || !data.ImportanceOrdered) return false;
+
+            Vector3 cameraPosition = camera.transform.position;
+            for (int visibleIndex = 0; visibleIndex < state.VisibleChunkCount; visibleIndex++)
+            {
+                SplatChunkInfo chunk = data.Chunks[state.VisibleChunks[visibleIndex]];
+                Bounds world = ChunkCulling.TransformBounds(localToWorld, chunk);
+                float radius = world.extents.magnitude;
+                float distance = Vector3.Distance(cameraPosition, world.center);
+                int budget = chunk.SplatCount;
+                if (distance > radius)
+                {
+                    float pixelRadius = focalPixelsY * radius / distance;
+                    float pixelArea = Mathf.PI * pixelRadius * pixelRadius;
+                    budget = Mathf.Clamp(Mathf.RoundToInt(pixelArea * chunkBudgetSplatsPerPixel), Mathf.Min(chunkBudgetFloor, chunk.SplatCount), chunk.SplatCount);
+                }
+
+                state.ChunkBudgets[visibleIndex] = budget;
+            }
+
+            // Small (one int per visible chunk) and it changes with every camera move: upload every frame.
+            state.ChunkBudgetBuffer?.SetData(state.ChunkBudgets, 0, 0, state.VisibleChunkCount);
+            return true;
         }
 
         private void FillProperties()
@@ -397,6 +498,9 @@ namespace GSplat
             properties.SetFloat(MinPixelRadiusId, minPixelRadius);
             properties.SetFloat(DilationId, dilation);
             properties.SetFloat(MaxPixelRadiusId, maxPixelRadius);
+            properties.SetInt(TriangleModeId, verticesPerSplat == 3 ? 1 : 0);
+            properties.SetInt(CheapGaussianId, cheapGaussian ? 1 : 0);
+            properties.SetInt(ClipLowAlphaId, clipLowAlpha ? 1 : 0);
         }
 
         private void OnDrawGizmosSelected()

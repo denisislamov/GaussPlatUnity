@@ -21,6 +21,7 @@
     // The viewer reads ?world=<url> and passes it to the WebPageBridge component through SendMessage once Unity is up.
     var params = new URLSearchParams(window.location.search);
     var worldUrl = params.get("world");
+    var bench = params.get("bench"); // "single" or "matrix": run the performance benchmark after the world loads
     var canvas = document.querySelector("#unity-canvas");
     var config = {
       arguments: [],
@@ -51,6 +52,7 @@
     }).then(function (unityInstance) {
       document.querySelector("#loading").style.display = "none";
       if (worldUrl) unityInstance.SendMessage("World", "LoadFromPage", worldUrl);
+      if (bench) unityInstance.SendMessage("World", "RunBenchmarkFromPage", bench);
       // Pause rendering while the tab is hidden: saves battery and avoids GPU context trouble on resume.
       document.addEventListener("visibilitychange", function () {
         unityInstance.SendMessage("World", document.hidden ? "PauseFromPage" : "ResumeFromPage", "");

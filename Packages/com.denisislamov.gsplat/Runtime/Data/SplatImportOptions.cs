@@ -28,6 +28,9 @@ namespace GSplat
         [Tooltip("Reorder splats along a Morton curve so each 65k chunk is spatially compact. Needed for chunk culling and for float16 position precision. Turn off only to debug.")]
         public bool SpatialSort = true;
 
+        [Tooltip("Inside each 65k chunk, put the most important splats (opacity x area) first, so the renderer can draw only the first N of a far chunk (P3 chunk budget). Chunk bounds and culling are unaffected.")]
+        public bool OrderChunksByImportance = false;
+
         public SplatImportOptions Clone()
         {
             return (SplatImportOptions)MemberwiseClone();

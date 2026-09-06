@@ -45,6 +45,9 @@ Shader "GSplat/Splat"
                 float _MinPixelRadius;   // splats whose own radius (before dilation) is below this are skipped
                 float _Dilation;         // pixels^2 added to the 2D covariance diagonal; 0.3 is the 3DGS rasterizer's value, 0 = off
                 float _MaxPixelRadius;   // splats reaching further than this are shrunk to it (Spark: 512); huge near-camera floaters otherwise veil the whole screen
+                int _TriangleMode;       // P2: 1 = one triangle per splat (3 vertices) instead of a quad; the tiler sees half the primitives
+                int _CheapGaussian;      // P9: 1 = polynomial falloff instead of exp
+                int _ClipLowAlpha;       // P9: 1 = discard fragments under 1/255 alpha (saves blend bandwidth, may disable tiler fast paths)
             CBUFFER_END
 
             struct Varyings
@@ -121,7 +124,7 @@ Shader "GSplat/Splat"
                 if (any(abs(ndc) > 1.0 + fp.radiusMajor * 2.0 / _ScreenParams.xy)) return Culled();
 
                 // 5. This vertex's corner. Pixels to clip space: NDC spans 2 units over the screen, and clip = NDC * w.
-                float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
+                float2 corner = _TriangleMode != 0 ? GSplatTriangleCorner(vertexId) : GSplatQuadCorner(vertexId);
                 positionCS.xy += GSplatCornerOffsetPixels(corner, fp) * (2.0 / _ScreenParams.xy) * positionCS.w;
 
                 // 6. Color and opacity.
@@ -135,7 +138,10 @@ Shader "GSplat/Splat"
             float4 Fragment(Varyings i) : SV_Target
             {
                 float distanceSq = dot(i.local, i.local);
-                float gaussian = exp(-0.5 * distanceSq);
+                // In triangle mode the primitive reaches out to 2x the quad's half-size; cut it back to the quad's square so
+                // both modes shade exactly the same pixels (the Gaussian tail beyond the square stays invisible as before).
+                if (_TriangleMode != 0 && any(abs(i.local) > _MaxStdDev)) discard;
+                float gaussian = _CheapGaussian != 0 ? GSplatCheapGaussian(distanceSq) : exp(-0.5 * distanceSq);
                 float alpha = i.color.a * gaussian;
 
                 if (_DebugMode == 2)
@@ -152,8 +158,8 @@ Shader "GSplat/Splat"
                 }
 
                 // Below 1/255 the fragment could not change an 8-bit target; skipping it saves blend bandwidth.
-                // TODO: measure on Mali whether this clip costs more than it saves (it disables some TBDR fast paths).
-                clip(alpha - 1.0 / 255.0);
+                // Switchable (P9) so the Mali question can be measured instead of guessed: does the clip cost more than it saves?
+                if (_ClipLowAlpha != 0) clip(alpha - 1.0 / 255.0);
                 return float4(i.color.rgb * alpha, alpha);
             }
             ENDHLSL

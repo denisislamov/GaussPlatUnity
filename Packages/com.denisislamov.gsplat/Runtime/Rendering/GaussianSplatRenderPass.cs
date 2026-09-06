@@ -26,6 +26,7 @@ namespace GSplat
             public readonly List<SplatDrawItem> Items = new List<SplatDrawItem>();
             public Material Material;
             public GraphicsBuffer QuadIndices;
+            public GraphicsBuffer TriangleIndices;
         }
 
         private static readonly Comparison<SplatDrawItem> FarToNear = (a, b) => b.DistanceToCamera.CompareTo(a.DistanceToCamera);
@@ -33,6 +34,7 @@ namespace GSplat
         private readonly List<SplatDrawItem> items = new List<SplatDrawItem>();
         private Material material;
         private GraphicsBuffer quadIndices;
+        private GraphicsBuffer triangleIndices;
 
         public GaussianSplatRenderPass()
         {
@@ -62,6 +64,20 @@ namespace GSplat
             quadIndices = new GraphicsBuffer(GraphicsBuffer.Target.Index, 6, sizeof(ushort)) { name = "GSplat Quad Indices" };
             quadIndices.SetData(new ushort[] { 0, 1, 2, 2, 1, 3 });
             return quadIndices;
+        }
+
+        /// <summary>Three indices for the one-triangle mode (P2); vertex 0..2 -> corner via SV_VertexID.</summary>
+        private GraphicsBuffer GetTriangleIndices()
+        {
+            if (triangleIndices != null) return triangleIndices;
+            triangleIndices = new GraphicsBuffer(GraphicsBuffer.Target.Index, 3, sizeof(ushort)) { name = "GSplat Triangle Indices" };
+            triangleIndices.SetData(new ushort[] { 0, 1, 2 });
+            return triangleIndices;
+        }
+
+        private static GraphicsBuffer IndicesFor(in SplatDrawItem item, GraphicsBuffer quad, GraphicsBuffer triangle)
+        {
+            return item.IndexCount == 3 ? triangle : quad;
         }
 
         private bool PrepareItems(Camera camera)
@@ -131,6 +147,7 @@ namespace GSplat
                 passData.Items.AddRange(items);
                 passData.Material = splatMaterial;
                 passData.QuadIndices = GetQuadIndices();
+                passData.TriangleIndices = GetTriangleIndices();
                 builder.SetRenderAttachment(resourceData.activeColorTexture, 0, AccessFlags.ReadWrite);
                 builder.SetRenderAttachmentDepth(resourceData.activeDepthTexture, AccessFlags.Read);
                 builder.AllowPassCulling(false);
@@ -139,14 +156,15 @@ namespace GSplat
                     for (int itemIndex = 0; itemIndex < data.Items.Count; itemIndex++)
                     {
                         SplatDrawItem item = data.Items[itemIndex];
+                        GraphicsBuffer indices = IndicesFor(item, data.QuadIndices, data.TriangleIndices);
                         ComputeBuffer drawArgs = item.Sorter.DrawArgs;
                         if (drawArgs != null)
                         {
-                            context.cmd.DrawProceduralIndirect(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, drawArgs, 0, item.Properties);
+                            context.cmd.DrawProceduralIndirect(indices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, drawArgs, 0, item.Properties);
                         }
                         else
                         {
-                            context.cmd.DrawProcedural(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
+                            context.cmd.DrawProcedural(indices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, item.IndexCount, item.InstanceCount, item.Properties);
                         }
                     }
                 });
@@ -173,13 +191,15 @@ namespace GSplat
             RecordSorts(items, commands);
 
             // Same draw loop as the raster pass, on a plain CommandBuffer (the two command buffer types share no interface).
-            GraphicsBuffer indices = GetQuadIndices();
+            GraphicsBuffer quad = GetQuadIndices();
+            GraphicsBuffer triangle = GetTriangleIndices();
             for (int itemIndex = 0; itemIndex < items.Count; itemIndex++)
             {
                 SplatDrawItem item = items[itemIndex];
+                GraphicsBuffer indices = IndicesFor(item, quad, triangle);
                 ComputeBuffer drawArgs = item.Sorter.DrawArgs;
                 if (drawArgs != null) commands.DrawProceduralIndirect(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, drawArgs, 0, item.Properties);
-                else commands.DrawProcedural(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
+                else commands.DrawProcedural(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, item.IndexCount, item.InstanceCount, item.Properties);
             }
 
             context.ExecuteCommandBuffer(commands);
@@ -196,6 +216,8 @@ namespace GSplat
 
             quadIndices?.Dispose();
             quadIndices = null;
+            triangleIndices?.Dispose();
+            triangleIndices = null;
         }
     }
 }

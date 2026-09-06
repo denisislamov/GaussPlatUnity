@@ -14,6 +14,9 @@ namespace GSplat
         public readonly int SplatCount;
         public readonly int ShDegree;
         public readonly bool Antialiased;
+
+        /// <summary>P3: inside every chunk the splats are ordered by importance (opacity x area) descending, so a prefix of a chunk is a valid lower level of detail.</summary>
+        public readonly bool ImportanceOrdered;
         public readonly float3 BoundsMin;
         public readonly float3 BoundsMax;
 
@@ -33,8 +36,9 @@ namespace GSplat
         /// <summary>Native memory held by this object, for the memory budget (E6-T4).</summary>
         public long NativeMemoryBytes => (long)Packed.Length * PackedSplat.SizeInBytes + Sh.Length + (long)Chunks.Length * 48;
 
-        public GsplatData(int splatCount, int shDegree, bool antialiased, float3 boundsMin, float3 boundsMax, Allocator allocator = Allocator.Persistent)
+        public GsplatData(int splatCount, int shDegree, bool antialiased, float3 boundsMin, float3 boundsMax, Allocator allocator = Allocator.Persistent, bool importanceOrdered = false)
         {
+            ImportanceOrdered = importanceOrdered;
             if (splatCount < 0) throw new ArgumentOutOfRangeException(nameof(splatCount));
             if (shDegree < 0 || shDegree > ShMath.MaxDegree) throw new ArgumentOutOfRangeException(nameof(shDegree));
 

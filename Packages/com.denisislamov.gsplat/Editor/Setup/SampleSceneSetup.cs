@@ -91,6 +91,28 @@ namespace GSplat.Editor
             Debug.Log($"GSplat: {created} scene(s) written to {sceneFolder}.");
         }
 
+        /// <summary>P3: re-imports the Niantic and InnerTest samples with importance-ordered chunks, so the chunk budget has something to work with.</summary>
+        [MenuItem("GSplat/Setup/Reimport Samples With Importance-Ordered Chunks")]
+        public static void ReimportSamplesWithImportanceOrder()
+        {
+            foreach (string folder in new[] { SamplesFolder, "Assets/Samples/InnerTest" })
+            {
+                if (!System.IO.Directory.Exists(folder)) continue;
+                foreach (string file in System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.AllDirectories))
+                {
+                    string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                    if (extension != ".spz" && extension != ".ply") continue;
+
+                    var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
+                    if (importer == null || importer.Options.OrderChunksByImportance) continue;
+                    importer.Options.OrderChunksByImportance = true;
+                    EditorUtility.SetDirty(importer);
+                    importer.SaveAndReimport();
+                    Debug.Log("GSplat: reimported with importance-ordered chunks: " + file);
+                }
+            }
+        }
+
         /// <summary>Re-imports every .spz/.ply under the samples folder keeping SH degree 3 (the importer default is 0, tuned for phones).</summary>
         [MenuItem("GSplat/Setup/Reimport Niantic Samples With SH 3")]
         public static void ReimportSamplesWithSh3()
