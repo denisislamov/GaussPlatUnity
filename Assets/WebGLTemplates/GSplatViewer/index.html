@@ -43,7 +43,7 @@
       productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
       productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
       // Splat rendering is fill-rate bound; rendering at the device's native DPR would cost 4x the pixels on a
-      // phone for no visible gain (InnerTest also uses DPR 1).
+      // phone for no visible gain.
       devicePixelRatio: 1
     };
     createUnityInstance(canvas, config, function (progress) {

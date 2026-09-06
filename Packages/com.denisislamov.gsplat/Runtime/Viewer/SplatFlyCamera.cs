@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 namespace GSplat
 {
     /// <summary>
-    /// The viewer camera of TZ E9: free flight by default (InnerTest worlds without a collider are fly-through), walking
+    /// The viewer camera of TZ E9: free flight by default (generated worlds without a collider are fly-through), walking
     /// with a CharacterController when a collider exists. Desktop: WASD/QE, right mouse drag to look, wheel for speed,
     /// Shift to boost. Touch: one finger looks, pinch moves forward/back, two fingers pan, the on-screen stick walks.
     /// </summary>

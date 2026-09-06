@@ -94,9 +94,9 @@ namespace GSplat.Editor
                 var viewer = new GameObject("Viewer");
                 viewer.AddComponent<SplatDebugOverlay>();
                 viewer.AddComponent<DeviceQualityApplier>();
-                viewer.AddComponent<SplatSceneMenu>();
 
                 AddReferenceGeometry();
+                AddSceneSwitchCanvas();
 
                 string scenePath = $"{sceneFolder}/{name}.unity";
                 EditorSceneManager.SaveScene(scene, scenePath);
@@ -186,6 +186,56 @@ namespace GSplat.Editor
         /// 100k/150k/500k/full_res) the 500k one is taken, else the largest. By file, not by "t:GaussianSplatAsset":
         /// the type search index is not reliable right after a batch import.
         /// </summary>
+        /// <summary>A real Canvas in the scene (visible in the hierarchy, editable) with one button that loads the next scene of the build.</summary>
+        private static void AddSceneSwitchCanvas()
+        {
+            var eventSystem = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem), typeof(UnityEngine.InputSystem.UI.InputSystemUIInputModule));
+
+            var canvasObject = new GameObject("Scene Switch Canvas", typeof(Canvas), typeof(UnityEngine.UI.CanvasScaler), typeof(UnityEngine.UI.GraphicRaycaster));
+            Canvas canvas = canvasObject.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 110;
+            var scaler = canvasObject.GetComponent<UnityEngine.UI.CanvasScaler>();
+            scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            scaler.matchWidthOrHeight = 0.5f;
+
+            var safeObject = new GameObject("Safe Area", typeof(RectTransform), typeof(SafeAreaPanel));
+            safeObject.transform.SetParent(canvasObject.transform, false);
+
+            var buttonObject = new GameObject("Next Scene Button", typeof(UnityEngine.UI.Image), typeof(UnityEngine.UI.Button), typeof(NextSceneButton));
+            buttonObject.transform.SetParent(safeObject.transform, false);
+            var rect = (RectTransform)buttonObject.transform;
+            rect.anchorMin = new Vector2(0.5f, 0f);
+            rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.anchoredPosition = new Vector2(0f, 40f);
+            rect.sizeDelta = new Vector2(520f, 110f);
+            var image = buttonObject.GetComponent<UnityEngine.UI.Image>();
+            image.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+            image.type = UnityEngine.UI.Image.Type.Sliced;
+            image.color = new Color(1f, 1f, 1f, 0.8f);
+
+            var labelObject = new GameObject("Label", typeof(UnityEngine.UI.Text));
+            labelObject.transform.SetParent(buttonObject.transform, false);
+            var labelRect = (RectTransform)labelObject.transform;
+            labelRect.anchorMin = Vector2.zero;
+            labelRect.anchorMax = Vector2.one;
+            labelRect.offsetMin = Vector2.zero;
+            labelRect.offsetMax = Vector2.zero;
+            var label = labelObject.GetComponent<UnityEngine.UI.Text>();
+            label.font = AssetDatabase.GetBuiltinExtraResource<Font>("LegacyRuntime.ttf");
+            label.fontSize = 40;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = Color.black;
+            label.text = "Next scene";
+            label.raycastTarget = false;
+
+            var serializedButton = new SerializedObject(buttonObject.GetComponent<NextSceneButton>());
+            serializedButton.FindProperty("label").objectReferenceValue = label;
+            serializedButton.ApplyModifiedPropertiesWithoutUndo();
+        }
+
         /// <summary>A lit URP cube and a light in front of the spawn: shows depth compositing of splats with ordinary geometry.</summary>
         private static void AddReferenceGeometry()
         {

@@ -56,7 +56,7 @@ namespace GSplat.Sandbox.Editor
         private static void Build(BuildTarget target, string location)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(location) ?? ".");
-            // Local InnerTest scenes (git-ignored) go into the build when they exist, so a phone build has real worlds to show.
+            // The InnerTest world scenes go into the build when they exist, so a phone build has real worlds to show.
             var scenes = new System.Collections.Generic.List<string> { ViewerScenePath };
             if (Directory.Exists("Assets/Scenes/InnerTest")) scenes.AddRange(Directory.GetFiles("Assets/Scenes/InnerTest", "*.unity"));
             scenes.Add(SpikeScenePath);

@@ -24,7 +24,7 @@ namespace GSplat
         }
 
         /// <summary>
-        /// The value splats are ordered by. Radial (distance to the camera) is what Spark and InnerTest use and it has a
+        /// The value splats are ordered by. Radial (distance to the camera) is what Spark uses and it has a
         /// practical bonus: turning the camera does not change the order, only moving does. View depth is the
         /// classic 3DGS choice; the two differ for splats far off the view axis.
         /// </summary>

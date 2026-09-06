@@ -10,7 +10,7 @@ namespace GSplat
     [Serializable]
     public sealed class SplatQualityProfile
     {
-        [Tooltip("Largest level the viewer loads. 0 = no limit (desktop full-res). InnerTest caps phones at 500k.")]
+        [Tooltip("Largest level the viewer loads. 0 = no limit (desktop full-res). 500k is the usual phone cap.")]
         public int MaxSplatCount = 500000;
 
         [Tooltip("Quad reach in standard deviations. sqrt(8) desktop, sqrt(5) on phones (Spark's advice).")]
@@ -22,7 +22,7 @@ namespace GSplat
         [Tooltip("Splats whose own radius projects below this many pixels are skipped. 0.5 desktop; 1.0 on phones roughly halves the frame cost (ADR-002).")]
         public float MinPixelRadius = 0.5f;
 
-        [Tooltip("Seconds of crossfade when a better level replaces the current one (InnerTest: about 3).")]
+        [Tooltip("Seconds of crossfade when a better level replaces the current one (about 3 s).")]
         public float CrossfadeSeconds = 3f;
 
         [Tooltip("Application.targetFrameRate for the viewer. 0 leaves it alone.")]

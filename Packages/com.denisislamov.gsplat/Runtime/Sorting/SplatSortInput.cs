@@ -28,7 +28,7 @@ namespace GSplat
         public float3 CameraPositionLocal;
         public float3 CameraForwardLocal;
 
-        /// <summary>Order by distance to the camera (Spark/InnerTest) instead of view depth (classic 3DGS). See SplatSortKeys.SortMetric.</summary>
+        /// <summary>Order by distance to the camera (Spark) instead of view depth (classic 3DGS). See SplatSortKeys.SortMetric.</summary>
         public bool Radial;
 
         /// <summary>View depth of the nearest and farthest point of the visible chunk bounds; the 16-bit key spans this range.</summary>

@@ -12,14 +12,13 @@ time from its own camera. Collapse it or switch to Game View.
 
 ## Use your own file
 
-InnerTest exports (World page > Export > Splats, or the World API) go into `Assets/Samples/InnerTest/`. That folder is
-git-ignored on purpose: InnerTest worlds are not redistributable. `GSplat > Setup > Create InnerTest Samples Scene` puts
-everything in that folder into one scene.
+Three generated test worlds live in `Assets/Samples/InnerTest/` (four SPZ levels and a collider each), with one scene per
+world in `Assets/Scenes/InnerTest/`. `GSplat > Setup > Create InnerTest Scenes` rebuilds those scenes.
 
 1. Drop an `.spz` or `.ply` into `Assets/`. Select it: the import settings are on the file.
    The one that matters is **Source Coordinate System**. If the scene comes out mirrored or upside
    down, try another value and press Apply. RUB is right for Niantic and three.js files, RDF for
-   PLY from the original 3DGS code, LDF for InnerTest exports.
+   PLY from the original 3DGS code, LDF for the InnerTest worlds in this repo.
 2. Create an empty GameObject, add **GSplat > Gaussian Splat Renderer**, assign the asset.
 
 That is all. It renders in Scene and Game view next to your meshes.
@@ -38,7 +37,7 @@ On the renderer component:
   and is cheaper.
 - **Sh Degree**: view-dependent color. 0 on phones.
 - **Sorter Kind**: Auto picks the GPU sorter when compute shaders exist.
-- **Dilation** and **Max Pixel Radius** default to what InnerTest viewer uses (0 and 512). With these and
+- **Dilation** and **Max Pixel Radius** default to what the Spark web viewer uses (0 and 512). With these and
   SH 3 the horned lizard sample matches Spark at 37.7 dB PSNR from the same camera.
 
 ## The viewer

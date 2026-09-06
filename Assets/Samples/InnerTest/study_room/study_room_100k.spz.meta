@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 8a57f8c9df2d54866a556cd2fd6a960d
+ScriptedImporter:
+  internalIDToNameTable: []
+  externalObjects: {}
+  serializedVersion: 2
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+  script: {fileID: 11500000, guid: ff78c488a7c23468ca72fc2787e65888, type: 3}
+  options:
+    SourceCoordinateSystem: 4
+    TargetShDegree: 0
+    PruneAlphaBelow: 0.003921569
+    MaxSplatCount: 0
+    SpatialSort: 1

@@ -10,7 +10,7 @@ namespace GSplat
     [Serializable]
     public sealed class SplatImportOptions
     {
-        [Tooltip("Axis convention of the source file. SPZ tools assume RUB (three.js), 3DGS .ply files are RDF, InnerTest exports are LDF. Wrong choice = mirrored or upside-down scene.")]
+        [Tooltip("Axis convention of the source file. SPZ tools assume RUB (three.js), 3DGS .ply files are RDF, the InnerTest worlds are LDF. Wrong choice = mirrored or upside-down scene.")]
         public SplatCoordinateSystem SourceCoordinateSystem = SplatCoordinateSystem.Rub;
 
         [Tooltip("Highest SH degree to keep. 0 = flat color only (mobile default); higher degrees cost 9/24/45 bytes per splat.")]

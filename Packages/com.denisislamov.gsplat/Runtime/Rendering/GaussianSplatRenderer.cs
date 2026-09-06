@@ -52,7 +52,7 @@ namespace GSplat
         [SerializeField, Min(0f), Tooltip("Splats that would reach further than this many pixels are shrunk to it. Phone captures have huge background splats that otherwise cover the whole screen when the camera is inside the scene. 512 is Spark's default; 0 = no limit.")]
         private float maxPixelRadius = 512f;
 
-        [SerializeField, Range(0f, 1f), Tooltip("Low-pass filter added to every splat's screen covariance (pixels squared). 0 matches InnerTest viewer (Spark) and is the default; 0.3 is what the original 3DGS rasterizer uses and softens thin splats at the cost of a slight haze. Mip-splatting scenes compensate the opacity automatically.")]
+        [SerializeField, Range(0f, 1f), Tooltip("Low-pass filter added to every splat's screen covariance (pixels squared). 0 matches the Spark web viewer and is the default; 0.3 is what the original 3DGS rasterizer uses and softens thin splats at the cost of a slight haze. Mip-splatting scenes compensate the opacity automatically.")]
         private float dilation = 0f;
 
         [Header("Look")]
@@ -64,7 +64,7 @@ namespace GSplat
 
         [Header("Engine")]
         [SerializeField] private SplatSorterKind sorterKind = SplatSorterKind.Auto;
-        [SerializeField, Tooltip("Sort by distance to the camera (what InnerTest viewer does) instead of by view depth (classic 3DGS). Matches Spark's output; see ADR-003.")]
+        [SerializeField, Tooltip("Sort by distance to the camera (what Spark does) instead of by view depth (classic 3DGS). Matches Spark's output; see ADR-003.")]
         private bool sortRadial = true;
         [SerializeField, Min(1), Tooltip("Chunks (65k splats, 1 MB) uploaded per frame. Higher = faster appearance, longer frame.")]
         private int uploadChunksPerFrame = 2;

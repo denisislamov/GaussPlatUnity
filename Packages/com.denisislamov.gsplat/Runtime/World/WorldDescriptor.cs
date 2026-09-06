@@ -60,7 +60,7 @@ namespace GSplat
         public string colliderUrl;
         public WorldSpawn spawn = new WorldSpawn();
 
-        /// <summary>Scale applied to the whole world so its units become meters (InnerTest: semantics_metadata.metric_scale_factor). 1 = already meters.</summary>
+        /// <summary>Scale applied to the whole world so its units become meters (the InnerTest worlds carry it in their semantics.json). 1 = already meters.</summary>
         public float unitsToMeters = 1f;
 
         public bool HasCollider => !string.IsNullOrEmpty(colliderUrl);
