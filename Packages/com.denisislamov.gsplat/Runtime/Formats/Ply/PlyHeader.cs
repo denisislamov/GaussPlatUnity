@@ -129,12 +129,7 @@ namespace GSplat
             string headerText = Encoding.ASCII.GetString(bytes, 0, headerEnd);
             string[] lines = headerText.Split('\n');
 
-            PlyFormat? format = null;
-            int vertexCount = -1;
-            bool insideVertexElement = false;
-            var properties = new List<PlyProperty>();
-            int stride = 0;
-
+            var state = new HeaderParseState();
             for (int lineIndex = 1; lineIndex < lines.Length; lineIndex++)
             {
                 string line = lines[lineIndex].Trim();
@@ -146,56 +141,65 @@ namespace GSplat
                 string[] tokens = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 switch (tokens[0])
                 {
-                    case "format":
-                        format = ParseFormat(tokens);
-                        break;
-
-                    case "element":
-                        if (tokens.Length < 3) throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY element line: \"{line}\".");
-                        if (tokens[1] == "vertex")
-                        {
-                            if (!int.TryParse(tokens[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out vertexCount) || vertexCount < 0)
-                            {
-                                throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY vertex count: \"{line}\".");
-                            }
-
-                            insideVertexElement = true;
-                        }
-                        else
-                        {
-                            if (vertexCount < 0)
-                            {
-                                throw new PlyException(PlyError.UnsupportedFormat, $"PLY element '{tokens[1]}' comes before the vertex element; only vertex-only splat files are supported.");
-                            }
-
-                            insideVertexElement = false; // properties of trailing elements are ignored; their data follows the vertices
-                        }
-                        break;
-
-                    case "property":
-                        if (!insideVertexElement) continue;
-                        if (tokens.Length < 3) throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY property line: \"{line}\".");
-                        if (tokens[1] == "list") throw new PlyException(PlyError.UnsupportedPropertyType, "PLY list properties on vertices are not supported.");
-                        PlyScalarType type = ParseType(tokens[1]);
-                        properties.Add(new PlyProperty(tokens[2], type, stride));
-                        stride += SizeOf(type);
-                        break;
-
-                    case "end_header":
-                        break;
-
-                    default:
-                        throw new PlyException(PlyError.MalformedHeader, $"Unexpected PLY header line: \"{line}\".");
+                    case "format": state.Format = ParseFormat(tokens); break;
+                    case "element": ParseElementLine(line, tokens, state); break;
+                    case "property": ParsePropertyLine(line, tokens, state); break;
+                    case "end_header": break;
+                    default: throw new PlyException(PlyError.MalformedHeader, $"Unexpected PLY header line: \"{line}\".");
                 }
             }
 
-            if (format == null) throw new PlyException(PlyError.MalformedHeader, "The PLY header has no format line.");
-            if (vertexCount < 0) throw new PlyException(PlyError.MalformedHeader, "The PLY header has no vertex element.");
+            if (state.Format == null) throw new PlyException(PlyError.MalformedHeader, "The PLY header has no format line.");
+            if (state.VertexCount < 0) throw new PlyException(PlyError.MalformedHeader, "The PLY header has no vertex element.");
 
             const int maxPoints = 64 * 1024 * 1024;
-            if (vertexCount > maxPoints) throw new PlyException(PlyError.TooManyPoints, $"PLY header claims {vertexCount} vertices; the limit is {maxPoints}.");
+            if (state.VertexCount > maxPoints) throw new PlyException(PlyError.TooManyPoints, $"PLY header claims {state.VertexCount} vertices; the limit is {maxPoints}.");
 
-            return new PlyHeader(format.Value, vertexCount, properties, stride, headerEnd);
+            return new PlyHeader(state.Format.Value, state.VertexCount, state.Properties, state.Stride, headerEnd);
+        }
+
+        /// <summary>What the header lines fill in while <see cref="Parse"/> walks them.</summary>
+        private sealed class HeaderParseState
+        {
+            public PlyFormat? Format;
+            public int VertexCount = -1;
+
+            /// <summary>Property lines only count while we are inside "element vertex"; other elements' properties are skipped.</summary>
+            public bool InsideVertexElement;
+            public readonly List<PlyProperty> Properties = new List<PlyProperty>();
+            public int Stride;
+        }
+
+        private static void ParseElementLine(string line, string[] tokens, HeaderParseState state)
+        {
+            if (tokens.Length < 3) throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY element line: \"{line}\".");
+            if (tokens[1] == "vertex")
+            {
+                if (!int.TryParse(tokens[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out state.VertexCount) || state.VertexCount < 0)
+                {
+                    throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY vertex count: \"{line}\".");
+                }
+
+                state.InsideVertexElement = true;
+                return;
+            }
+
+            if (state.VertexCount < 0)
+            {
+                throw new PlyException(PlyError.UnsupportedFormat, $"PLY element '{tokens[1]}' comes before the vertex element; only vertex-only splat files are supported.");
+            }
+
+            state.InsideVertexElement = false; // properties of trailing elements are ignored; their data follows the vertices
+        }
+
+        private static void ParsePropertyLine(string line, string[] tokens, HeaderParseState state)
+        {
+            if (!state.InsideVertexElement) return;
+            if (tokens.Length < 3) throw new PlyException(PlyError.MalformedHeader, $"Malformed PLY property line: \"{line}\".");
+            if (tokens[1] == "list") throw new PlyException(PlyError.UnsupportedPropertyType, "PLY list properties on vertices are not supported.");
+            PlyScalarType type = ParseType(tokens[1]);
+            state.Properties.Add(new PlyProperty(tokens[2], type, state.Stride));
+            state.Stride += SizeOf(type);
         }
 
         /// <summary>Index of the first byte after the "end_header" line and its newline.</summary>
