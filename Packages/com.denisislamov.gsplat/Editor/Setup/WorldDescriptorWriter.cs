@@ -52,9 +52,23 @@ namespace GSplat.Editor
         public static string WriteDescriptor(string worldFolder)
         {
             string name = Path.GetFileName(worldFolder);
+            List<(GaussianSplatAsset asset, string file)> levels = CollectLevels(worldFolder, out SplatCoordinateSystem coordinateSystem, out string collider);
+            if (levels.Count == 0) return null;
+
+            float unitsToMeters = ReadUnitsToMeters(worldFolder, name);
+            string json = BuildDescriptorJson(name, coordinateSystem, unitsToMeters, levels, collider);
+
+            string descriptorPath = Path.Combine(worldFolder, name + ".world.json");
+            File.WriteAllText(descriptorPath, json);
+            return descriptorPath;
+        }
+
+        /// <summary>Imported splat assets in the folder, smallest first, plus the collider GLB and the axis convention the importer used.</summary>
+        private static List<(GaussianSplatAsset asset, string file)> CollectLevels(string worldFolder, out SplatCoordinateSystem coordinateSystem, out string collider)
+        {
             var levels = new List<(GaussianSplatAsset asset, string file)>();
-            SplatCoordinateSystem coordinateSystem = SplatCoordinateSystem.Rub;
-            string collider = null;
+            coordinateSystem = SplatCoordinateSystem.Rub;
+            collider = null;
 
             foreach (string file in Directory.GetFiles(worldFolder))
             {
@@ -74,18 +88,23 @@ namespace GSplat.Editor
                 if (AssetImporter.GetAtPath(assetPath) is SplatImporterBase importer) coordinateSystem = importer.Options.SourceCoordinateSystem;
             }
 
-            if (levels.Count == 0) return null;
             levels.Sort((a, b) => a.asset.SplatCount.CompareTo(b.asset.SplatCount));
+            return levels;
+        }
 
-            // InnerTest semantics_metadata (saved next to the export): scene units -> meters.
-            float unitsToMeters = 1f;
+        /// <summary>InnerTest semantics_metadata (saved next to the export) carries the scene units to meters factor; 1 when absent.</summary>
+        private static float ReadUnitsToMeters(string worldFolder, string name)
+        {
             string semanticsPath = Path.Combine(worldFolder, name + ".semantics.json");
-            if (File.Exists(semanticsPath))
-            {
-                var semantics = JsonUtility.FromJson<InnerTestSemantics>(File.ReadAllText(semanticsPath));
-                if (semantics != null && semantics.metric_scale_factor > 0f) unitsToMeters = semantics.metric_scale_factor;
-            }
+            if (!File.Exists(semanticsPath)) return 1f;
 
+            var semantics = JsonUtility.FromJson<InnerTestSemantics>(File.ReadAllText(semanticsPath));
+            return semantics != null && semantics.metric_scale_factor > 0f ? semantics.metric_scale_factor : 1f;
+        }
+
+        /// <summary>Hand-written JSON so the file stays readable and the key order stable (JsonUtility cannot write nested arrays of objects).</summary>
+        private static string BuildDescriptorJson(string name, SplatCoordinateSystem coordinateSystem, float unitsToMeters, List<(GaussianSplatAsset asset, string file)> levels, string collider)
+        {
             string projectRoot = Directory.GetParent(Application.dataPath).FullName;
             var json = new StringBuilder();
             json.Append("{\n");
@@ -108,10 +127,7 @@ namespace GSplat.Editor
             // InnerTest generates the world around the origin, which is the natural viewpoint.
             json.Append("  \"spawn\": { \"position\": [0, 0, 0], \"rotationEuler\": [0, 0, 0] }\n");
             json.Append("}\n");
-
-            string descriptorPath = Path.Combine(worldFolder, name + ".world.json");
-            File.WriteAllText(descriptorPath, json.ToString());
-            return descriptorPath;
+            return json.ToString();
         }
     }
 }

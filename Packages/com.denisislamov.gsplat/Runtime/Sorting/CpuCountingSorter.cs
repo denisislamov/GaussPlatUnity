@@ -30,7 +30,6 @@ namespace GSplat
 
         public Texture OrderTexture => orderTexture;
         public int OrderedSplatCount { get; private set; }
-        public bool NeedsCompute => false;
         public UnityEngine.ComputeBuffer DrawArgs => null;
 
         /// <summary>True while a sort is scheduled and not yet collected; useful for the debug overlay.</summary>
@@ -53,7 +52,7 @@ namespace GSplat
             sortedCount = new NativeArray<int>(1, Allocator.Persistent);
         }
 
-        public void PrepareOnMainThread(in SplatSortInput input, bool resort)
+        public void Sort(in SplatSortInput input, bool resort)
         {
             if (jobInFlight)
             {
@@ -69,7 +68,7 @@ namespace GSplat
 
         public void RecordCompute(UnityEngine.Rendering.CommandBuffer commands)
         {
-            // Nothing to do: the order is uploaded from the CPU in PrepareOnMainThread.
+            // Nothing to do: the order is uploaded from the CPU in Sort.
         }
 
         /// <summary>Blocks until the current job is done and uploaded. Tests and the editor preview use it; the renderer does not.</summary>
@@ -91,23 +90,15 @@ namespace GSplat
             if (visibleChunksCopy.IsCreated) visibleChunksCopy.Dispose();
             visibleChunksCopy = new NativeArray<int>(input.VisibleChunks, Allocator.Persistent);
 
-            SplatSortKeys.LogRange(input.MinDepth, input.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
+            SplatSortKeys.LogRange(input.View.MinDepth, input.View.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
             var keyJob = new KeyJob
             {
                 Packed = input.Data.Packed,
                 Chunks = input.Data.Chunks,
                 VisibleChunks = visibleChunksCopy,
-                CameraPosition = input.CameraPositionLocal,
-                CameraForward = input.CameraForwardLocal,
-                Radial = input.Radial,
+                View = input.View,
                 LogMinDepth = logMinDepth,
                 InverseLogDepthRange = inverseLogDepthRange,
-                CullInKeys = input.CullInKeys,
-                LocalToClip = input.LocalToClip,
-                FocalPixelsY = input.FocalPixelsY,
-                ScreenSize = input.ScreenSize,
-                MaxStdDev = input.MaxStdDev,
-                MinPixelRadius = input.MinPixelRadius,
                 Keys = keys
             };
             JobHandle keyHandle = keyJob.Schedule(slotCount, 8192);
@@ -162,17 +153,9 @@ namespace GSplat
             [ReadOnly] public NativeArray<uint4> Packed;
             [ReadOnly] public NativeArray<SplatChunkInfo> Chunks;
             [ReadOnly] public NativeArray<int> VisibleChunks;
-            public float3 CameraPosition;
-            public float3 CameraForward;
-            public bool Radial;
+            public SplatCameraView View;
             public float LogMinDepth;
             public float InverseLogDepthRange;
-            public bool CullInKeys;
-            public float4x4 LocalToClip;
-            public float FocalPixelsY;
-            public float2 ScreenSize;
-            public float MaxStdDev;
-            public float MinPixelRadius;
             [WriteOnly] public NativeArray<uint> Keys;
 
             public void Execute(int slot)
@@ -189,13 +172,13 @@ namespace GSplat
                 int splatIndex = chunkIndex * SplatChunkInfo.Size + local;
                 PackedSplat.Unpack(Packed[splatIndex], out float3 normalized, out float3 logScale, out _, out _, out _);
                 float3 position = chunk.PositionOf(normalized);
-                if (CullInKeys && !SplatVisibility.IsVisible(position, math.exp(logScale), LocalToClip, FocalPixelsY, ScreenSize, MaxStdDev, MinPixelRadius))
+                if (View.CullInKeys && !SplatVisibility.IsVisible(position, math.exp(logScale), View))
                 {
                     Keys[slot] = SplatSortKeys.EmptyKey;
                     return;
                 }
 
-                float metric = SplatSortKeys.SortMetric(position, CameraPosition, CameraForward, Radial);
+                float metric = SplatSortKeys.SortMetric(position, View.PositionLocal, View.ForwardLocal, View.Radial);
                 Keys[slot] = SplatSortKeys.DepthToKey(metric, LogMinDepth, InverseLogDepthRange);
             }
         }

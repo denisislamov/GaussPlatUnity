@@ -39,6 +39,13 @@ namespace GSplat
         public WorldLoadState State => state;
         public WorldDescriptor Descriptor { get; private set; }
         public SplatQualityProfile ActiveProfile { get; private set; }
+
+        /// <summary>The URL loaded on Start (when enabled) and remembered by <see cref="WebPageBridge"/> for reloads.</summary>
+        public string WorldUrl
+        {
+            get => worldUrl;
+            set => worldUrl = value;
+        }
         public SplatLoadStatus LastStatus { get; private set; }
         public SplatLoadError LastError { get; private set; }
         public string LastErrorMessage { get; private set; }
@@ -144,24 +151,6 @@ namespace GSplat
             {
                 Fail(SplatLoadError.UnsupportedFormat, e.Message);
             }
-        }
-
-        /// <summary>Called from the web page (index.html sends ?world=... through SendMessage) and by deep links.</summary>
-        public void LoadFromPage(string url)
-        {
-            worldUrl = url;
-            _ = LoadAsync(url);
-        }
-
-        /// <summary>Web page hidden: stop rendering to save battery and avoid GPU context churn.</summary>
-        public void PauseFromPage(string unused)
-        {
-            Application.targetFrameRate = 1;
-        }
-
-        public void ResumeFromPage(string unused)
-        {
-            Application.targetFrameRate = ActiveProfile != null && ActiveProfile.TargetFrameRate > 0 ? ActiveProfile.TargetFrameRate : -1;
         }
 
         public void Cancel()

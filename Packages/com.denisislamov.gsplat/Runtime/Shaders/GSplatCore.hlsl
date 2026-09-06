@@ -37,11 +37,11 @@ float3x3 GSplatWorldCovariance(float3x3 objectToWorld, float4 rotation, float3 s
 float3 GSplatProjectCovariance(float3x3 worldCovariance, float3x3 worldToView, float3 t, float2 focal)
 {
     // Clamping x/z and y/z keeps the Jacobian sane for splats far outside the frustum (they are culled anyway
-    // but their corners are still computed).
-    float limitX = 1.3 * abs(focal.x) > 0.0 ? 1.3 : 1.3;
+    // but their corners are still computed). 1.3 = the 3DGS rasterizer's limit (a bit outside a 90 degree view).
+    const float limit = 1.3;
     float invZ = 1.0 / t.z;
-    float tx = clamp(t.x * invZ, -limitX, limitX) * t.z;
-    float ty = clamp(t.y * invZ, -limitX, limitX) * t.z;
+    float tx = clamp(t.x * invZ, -limit, limit) * t.z;
+    float ty = clamp(t.y * invZ, -limit, limit) * t.z;
 
     float3x3 j = float3x3(
         focal.x * invZ, 0.0, -focal.x * tx * invZ * invZ,
@@ -67,6 +67,66 @@ void GSplatEllipseAxes(float3 cov, out float2 majorAxis, out float lambdaMajor, 
     if (dot(v, v) < 1e-10) v = float2(lambdaMajor - d, b);
     if (dot(v, v) < 1e-10) v = a >= d ? float2(1.0, 0.0) : float2(0.0, 1.0);
     majorAxis = normalize(v);
+}
+
+// The quad a splat gets on screen: ellipse axes in pixels after the low-pass dilation and the size clamp, plus the
+// opacity factor that goes with the dilation. visible is false when the splat's own radius is under the threshold.
+struct GSplatFootprint
+{
+    float2 majorAxis;    // unit vector in pixels
+    float radiusMajor;   // half-extent along majorAxis, pixels
+    float radiusMinor;   // half-extent across it, pixels
+    float compensation;  // mip-splatting opacity scale (1 when off)
+    bool visible;
+};
+
+// From the projected 2D covariance (a, b, d in pixels^2) to the quad. Steps, in order:
+// 1. Own radius (largest eigenvalue before dilation): below minPixelRadius the splat is skipped. The key pass
+//    already dropped most of these with a looser bound; this is the exact check.
+// 2. Low-pass filter: every splat covers at least ~one pixel so thin ones do not flicker. With mip-splatting data
+//    the opacity is scaled down to keep the total energy (Yu et al. 2023, eq. 7); classic 3DGS data was trained
+//    with the dilation and no compensation, so we reproduce that.
+// 3. Ellipse axes, then the size clamp: same shape, smaller footprint, the falloff is compressed into the clamped
+//    quad and the opacity is unchanged.
+GSplatFootprint GSplatScreenFootprint(float3 cov, float maxStdDev, float minPixelRadius, float dilation, float maxPixelRadius, bool antialiased)
+{
+    GSplatFootprint fp;
+    fp.majorAxis = float2(1.0, 0.0);
+    fp.radiusMajor = 0.0;
+    fp.radiusMinor = 0.0;
+    fp.compensation = 1.0;
+    fp.visible = false;
+
+    float detBefore = cov.x * cov.z - cov.y * cov.y;
+    float midBefore = 0.5 * (cov.x + cov.z);
+    float lambdaBefore = midBefore + sqrt(max(midBefore * midBefore - detBefore, 0.0));
+    if (maxStdDev * sqrt(lambdaBefore) < minPixelRadius) return fp;
+
+    cov.x += dilation;
+    cov.z += dilation;
+    float detAfter = cov.x * cov.z - cov.y * cov.y;
+    fp.compensation = antialiased && dilation > 0.0 ? sqrt(max(detBefore / detAfter, 0.0)) : 1.0;
+
+    float lambdaMajor, lambdaMinor;
+    GSplatEllipseAxes(cov, fp.majorAxis, lambdaMajor, lambdaMinor);
+    fp.radiusMajor = maxStdDev * sqrt(lambdaMajor);
+    fp.radiusMinor = maxStdDev * sqrt(lambdaMinor);
+    if (maxPixelRadius > 0.0 && fp.radiusMajor > maxPixelRadius)
+    {
+        float shrink = maxPixelRadius / fp.radiusMajor;
+        fp.radiusMajor *= shrink;
+        fp.radiusMinor *= shrink;
+    }
+
+    fp.visible = true;
+    return fp;
+}
+
+// Pixel offset of a quad corner (each component -1 or +1) from the splat center.
+float2 GSplatCornerOffsetPixels(float2 corner, GSplatFootprint fp)
+{
+    float2 minorAxis = float2(-fp.majorAxis.y, fp.majorAxis.x);
+    return corner.x * fp.majorAxis * fp.radiusMajor + corner.y * minorAxis * fp.radiusMinor;
 }
 
 // Reads SH coefficient c (0-based, above degree 0), channel ch (0..2) of a splat from the SH texture.

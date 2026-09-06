@@ -1,7 +1,6 @@
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
 
 namespace GSplat.Editor
@@ -27,25 +26,17 @@ namespace GSplat.Editor
         {
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            var cameraObject = new GameObject("Main Camera");
-            Camera camera = cameraObject.AddComponent<Camera>();
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.05f, 0.05f, 0.07f);
-            camera.nearClipPlane = 0.05f;
-            camera.farClipPlane = 500f;
-            cameraObject.tag = "MainCamera";
-            cameraObject.AddComponent<UniversalAdditionalCameraData>();
-            cameraObject.AddComponent<AudioListener>();
-            cameraObject.AddComponent<SplatFlyCamera>();
-            cameraObject.transform.position = new Vector3(0f, 1.6f, -3f);
+            Camera camera = SceneObjects.CreateMainCamera(new Color(0.05f, 0.05f, 0.07f), 500f);
+            camera.gameObject.AddComponent<AudioListener>();
+            camera.transform.position = new Vector3(0f, 1.6f, -3f); // eye height, a few steps back from the origin
 
             var world = new GameObject("World");
             world.AddComponent<WorldLoader>();
+            world.AddComponent<WebPageBridge>();
 
-            var viewer = new GameObject("Viewer");
+            GameObject viewer = SceneObjects.CreateViewerObject();
             viewer.AddComponent<SplatViewerUi>();
             viewer.AddComponent<SplatQualityController>();
-            viewer.AddComponent<SplatDebugOverlay>();
 
             EditorSceneManager.SaveScene(scene, path);
             Debug.Log($"GSplat: viewer scene created at {path}. Set 'World Url' on the World object (a descriptor .json or a .spz URL) and press Play.");

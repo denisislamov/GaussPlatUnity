@@ -1,6 +1,6 @@
 {
   "name": "com.denisislamov.gsplat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "displayName": "GSplat",
   "description": "Gaussian Splat renderer for Unity: URP-compatible, mobile and web first. Reads SPZ and PLY.",
   "unity": "6000.3",

@@ -22,7 +22,7 @@ namespace GSplat.Tests
         public SortTestScene(int splatCount, uint seed = 99)
         {
             CameraForward = math.normalize(new float3(0.2f, -0.1f, 1f));
-            using (SplatCloud cloud = TestCloudsRuntime.Random(splatCount, 0, seed, 50f))
+            using (SplatCloud cloud = TestClouds.Random(splatCount, 0, seed, 50f))
             {
                 var options = new SplatImportOptions { SourceCoordinateSystem = SplatCoordinateSystem.Ruf, PruneAlphaBelow = 0f };
                 Data = GsplatBuilder.Build(cloud, options);
@@ -52,16 +52,19 @@ namespace GSplat.Tests
             SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, Radial, out float minDepth, out float maxDepth);
             return new SplatSortInput
             {
-                Radial = Radial,
                 Data = Data,
                 Gpu = Gpu,
                 VisibleChunks = VisibleChunks,
                 VisibleChunkBuffer = VisibleChunkBuffer,
                 VisibleSplatCount = Data.SplatCount,
-                CameraPositionLocal = CameraPosition,
-                CameraForwardLocal = CameraForward,
-                MinDepth = minDepth,
-                MaxDepth = maxDepth
+                View = new SplatCameraView
+                {
+                    PositionLocal = CameraPosition,
+                    ForwardLocal = CameraForward,
+                    Radial = Radial,
+                    MinDepth = minDepth,
+                    MaxDepth = maxDepth
+                }
             };
         }
 

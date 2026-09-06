@@ -3,8 +3,8 @@ using Unity.Mathematics;
 
 namespace GSplat.Tests
 {
-    /// <summary>Runtime-test copy of the editor helper (test assemblies cannot reference each other across Editor/Runtime).</summary>
-    public static class TestCloudsRuntime
+    /// <summary>Small deterministic clouds shared by the EditMode and PlayMode tests. Values stay inside the quantization ranges of SPZ.</summary>
+    public static class TestClouds
     {
         public static SplatCloud Random(int count, int shDegree, uint seed = 1234, float extent = 8f)
         {
@@ -24,6 +24,17 @@ namespace GSplat.Tests
                 cloud.Sh[floatIndex] = random.NextFloat(-0.9f, 0.9f);
             }
 
+            return cloud;
+        }
+
+        public static SplatCloud Single(float3 position, float3 logScale, float4 rotation, float alpha, float3 color)
+        {
+            var cloud = new SplatCloud(1, 0, false, Allocator.Persistent);
+            cloud.Positions[0] = position;
+            cloud.LogScales[0] = logScale;
+            cloud.Rotations[0] = math.normalize(rotation);
+            cloud.Alphas[0] = alpha;
+            cloud.Colors[0] = color;
             return cloud;
         }
     }

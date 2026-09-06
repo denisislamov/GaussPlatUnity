@@ -3,6 +3,7 @@
     "rootNamespace": "GSplat.Tests",
     "references": [
         "GSplat",
+        "GSplat.Tests.Shared",
         "Unity.Collections",
         "Unity.Mathematics",
         "Unity.PerformanceTesting",

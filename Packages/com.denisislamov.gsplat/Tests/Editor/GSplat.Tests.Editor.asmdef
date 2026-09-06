@@ -3,7 +3,10 @@
     "rootNamespace": "GSplat.Tests",
     "references": [
         "GSplat",
+        "GSplat.Tests.Shared",
         "GSplat.Editor",
+        "Unity.RenderPipelines.Universal.Runtime",
+        "UnityEngine.UI",
         "Unity.Collections",
         "Unity.Mathematics",
         "UnityEngine.TestRunner",

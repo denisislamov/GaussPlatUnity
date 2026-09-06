@@ -78,6 +78,17 @@ namespace GSplat
             LocalBounds = new Bounds();
             LocalBounds.SetMinMax(data.BoundsMin, data.BoundsMax);
 
+            // Region copies let a chunk be uploaded on its own; without them (or with a single chunk) the whole texture
+            // goes up in one Apply, see UploadNextChunk.
+            canCopyRegions = (SystemInfo.copyTextureSupport & CopyTextureSupport.Basic) != 0 && ChunkCount > 1;
+
+            CreateSplatTexture();
+            CreateChunkResources(data);
+            if (data.Sh.Length > 0) CreateShTexture(data);
+        }
+
+        private void CreateSplatTexture()
+        {
             int rows = math.max(1, ChunkCount * RowsPerChunk);
             SplatTexture = new Texture2D(TextureWidth, rows, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None)
             {
@@ -87,14 +98,17 @@ namespace GSplat
                 anisoLevel = 0
             };
 
-            canCopyRegions = (SystemInfo.copyTextureSupport & CopyTextureSupport.Basic) != 0 && ChunkCount > 1;
             if (canCopyRegions)
             {
                 // A Texture2D keeps a CPU mirror until Apply(makeNoLongerReadable: true). On the staging path the big
                 // texture is only ever written by CopyTexture, so drop the mirror right away: it would double the memory.
                 SplatTexture.Apply(false, true);
             }
+        }
 
+        /// <summary>The chunk table for compute (structured buffer) and for the vertex shader (range texture; GLES 3.0 has too few uniforms for an array).</summary>
+        private void CreateChunkResources(GsplatData data)
+        {
             ChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, ChunkCount), 48) { name = "GSplat Chunks" };
             if (ChunkCount > 0) ChunkBuffer.SetData(data.Chunks);
 
@@ -112,11 +126,6 @@ namespace GSplat
             }
 
             ChunkRangeTexture.Apply(false, true);
-
-            if (data.Sh.Length > 0)
-            {
-                CreateShTexture(data);
-            }
         }
 
         private void CreateShTexture(GsplatData data)
@@ -161,46 +170,48 @@ namespace GSplat
         {
             if (IsFullyUploaded) return;
 
-            int chunkIndex = UploadedChunkCount;
+            if (canCopyRegions) UploadChunkThroughStaging(UploadedChunkCount);
+            else UploadEverythingAtOnce();
+        }
+
+        private void UploadChunkThroughStaging(int chunkIndex)
+        {
+            if (stagingTexture == null)
+            {
+                stagingTexture = new Texture2D(TextureWidth, RowsPerChunk, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None)
+                {
+                    name = "GSplat Staging",
+                    filterMode = FilterMode.Point,
+                    hideFlags = HideFlags.HideAndDontSave
+                };
+            }
+
             int firstSplat = chunkIndex * SplatChunkInfo.Size;
             int splatCount = source.Chunks[chunkIndex].SplatCount;
 
-            if (canCopyRegions)
-            {
-                if (stagingTexture == null)
-                {
-                    stagingTexture = new Texture2D(TextureWidth, RowsPerChunk, GraphicsFormat.R8G8B8A8_UNorm, TextureCreationFlags.None)
-                    {
-                        name = "GSplat Staging",
-                        filterMode = FilterMode.Point,
-                        hideFlags = HideFlags.HideAndDontSave
-                    };
-                }
+            // One uint4 (16 bytes) of packed data is exactly four RGBA8 texels, so the texel array is the packed
+            // array viewed as uint4s: no per-byte shuffling needed (little-endian: byte 0 lands in R).
+            NativeArray<uint4> staging = stagingTexture.GetPixelData<uint4>(0);
+            NativeArray<uint4>.Copy(source.Packed, firstSplat, staging, 0, splatCount);
+            stagingTexture.Apply(false, false);
 
-                // One uint4 (16 bytes) of packed data is exactly four RGBA8 texels, so the texel array is the packed
-                // array viewed as uint4s: no per-byte shuffling needed (little-endian: byte 0 lands in R).
-                NativeArray<uint4> staging = stagingTexture.GetPixelData<uint4>(0);
-                NativeArray<uint4>.Copy(source.Packed, firstSplat, staging, 0, splatCount);
-                stagingTexture.Apply(false, false);
-
-                int rowsUsed = (splatCount * PackedSplat.TexelsPerSplat + TextureWidth - 1) / TextureWidth;
-                Graphics.CopyTexture(stagingTexture, 0, 0, 0, 0, TextureWidth, rowsUsed, SplatTexture, 0, 0, 0, chunkIndex * RowsPerChunk);
-            }
-            else
-            {
-                NativeArray<uint4> pixels = SplatTexture.GetPixelData<uint4>(0);
-                NativeArray<uint4>.Copy(source.Packed, 0, pixels, 0, source.Packed.Length);
-                SplatTexture.Apply(false, true);
-                UploadedChunkCount = ChunkCount;
-                return;
-            }
+            int rowsUsed = (splatCount * PackedSplat.TexelsPerSplat + TextureWidth - 1) / TextureWidth;
+            Graphics.CopyTexture(stagingTexture, 0, 0, 0, 0, TextureWidth, rowsUsed, SplatTexture, 0, 0, 0, chunkIndex * RowsPerChunk);
 
             UploadedChunkCount++;
-            if (IsFullyUploaded && stagingTexture != null)
+            if (IsFullyUploaded)
             {
                 SplatObjectUtility.Destroy(stagingTexture);
                 stagingTexture = null;
             }
+        }
+
+        private void UploadEverythingAtOnce()
+        {
+            NativeArray<uint4> pixels = SplatTexture.GetPixelData<uint4>(0);
+            NativeArray<uint4>.Copy(source.Packed, 0, pixels, 0, source.Packed.Length);
+            SplatTexture.Apply(false, true);
+            UploadedChunkCount = ChunkCount;
         }
 
         public void UploadAll()
@@ -217,6 +228,10 @@ namespace GSplat
 
         public void Dispose()
         {
+            // Textures first, the chunk buffer last. TODO: with the buffer disposed before the textures, a PlayMode test
+            // that reads back compute results right after another SplatGpuData was disposed failed intermittently on
+            // Metal (AsyncGPUReadback hasError). Texture destruction is deferred while GraphicsBuffer.Dispose is
+            // immediate; why the order matters is not understood, so it is pinned here and not to be shuffled.
             if (SplatTexture != null) { SplatObjectUtility.Destroy(SplatTexture); SplatTexture = null; }
             if (stagingTexture != null) { SplatObjectUtility.Destroy(stagingTexture); stagingTexture = null; }
             if (ShTexture != null) { SplatObjectUtility.Destroy(ShTexture); ShTexture = null; }

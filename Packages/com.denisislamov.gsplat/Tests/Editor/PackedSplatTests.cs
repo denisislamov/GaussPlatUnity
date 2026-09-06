@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 
 namespace GSplat.Tests
@@ -59,6 +60,15 @@ namespace GSplat.Tests
             // scale.z byte 0; rotation xyz = 0 -> 127.5 rounds to 128 (0x80) each.
             Assert.AreEqual(0x80808000u, packed.z);
             Assert.AreEqual(0xFF0000FFu, packed.w, "r = 255, g = b = 0, alpha = 255");
+        }
+
+        [Test]
+        public void ChunkInfoIs48BytesWithFloat3sOn16ByteBoundaries()
+        {
+            // The chunk GraphicsBuffer is declared with this stride on the HLSL side; the reserved fillers keep it.
+            Assert.AreEqual(48, UnsafeUtility.SizeOf<SplatChunkInfo>());
+            Assert.AreEqual(16, UnsafeUtility.GetFieldOffset(typeof(SplatChunkInfo).GetField("BoundsMin")));
+            Assert.AreEqual(32, UnsafeUtility.GetFieldOffset(typeof(SplatChunkInfo).GetField("BoundsMax")));
         }
     }
 }

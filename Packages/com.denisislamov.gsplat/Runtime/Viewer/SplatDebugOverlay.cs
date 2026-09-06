@@ -65,13 +65,13 @@ namespace GSplat
         {
             if (!visible) return;
 
-            // Inside the safe area (notches, rounded corners) and as tall as the text needs; GUI space is y-down.
-            Rect safe = Screen.safeArea;
+            // Inside the safe area (notches, rounded corners) and as tall as the text needs.
+            Rect safe = SafeAreaPanel.GuiRect(Screen.safeArea, Screen.height);
             GUIStyle style = GUI.skin.label;
             style.fontSize = Mathf.Max(12, Screen.height / 80);
             style.wordWrap = true;
             float x = safe.xMin + 10f;
-            float y = Screen.height - safe.yMax + 10f;
+            float y = safe.yMin + 10f;
             float width = safe.width - 20f;
             float height = style.CalcHeight(new GUIContent(cachedText), width) + 4f;
 

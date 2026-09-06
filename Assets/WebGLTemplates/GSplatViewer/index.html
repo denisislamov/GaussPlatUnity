@@ -18,7 +18,7 @@
   <div id="loading"><div><div>Loading viewer…</div><div class="bar"><div id="progress"></div></div></div></div>
   <script src="Build/{{{ LOADER_FILENAME }}}"></script>
   <script>
-    // The viewer reads ?world=<url> and passes it to WorldLoader through SendMessage once Unity is up.
+    // The viewer reads ?world=<url> and passes it to the WebPageBridge component through SendMessage once Unity is up.
     var params = new URLSearchParams(window.location.search);
     var worldUrl = params.get("world");
     var canvas = document.querySelector("#unity-canvas");

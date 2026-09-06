@@ -1,6 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 namespace GSplat
@@ -19,11 +17,12 @@ namespace GSplat
         [SerializeField, Tooltip("Show the joystick and Reset only on touch devices; on desktop the keyboard does the job.")]
         private bool touchControlsOnlyOnMobile = true;
 
+        /// <summary>Width and height of the status and notice labels.</summary>
+        private static readonly Vector2 TextSize = new Vector2(600f, 40f);
+
         private Text statusText;
         private Text noticeText;
         private VirtualJoystick joystick;
-        private RectTransform safeArea;
-        private Rect appliedSafeArea;
         private float noticeUntil;
 
         private void Start()
@@ -58,37 +57,25 @@ namespace GSplat
 
         private void Update()
         {
-            if (safeArea != null && Screen.safeArea != appliedSafeArea) ApplySafeArea();
             if (flyCamera != null && joystick != null) flyCamera.JoystickInput = joystick.Value;
             if (noticeText != null && noticeText.enabled && Time.unscaledTime > noticeUntil) noticeText.enabled = false;
         }
 
         private void Build()
         {
-            if (EventSystem.current == null)
-            {
-                var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
-                eventSystem.transform.SetParent(transform, false);
-            }
+            UiFactory.EnsureEventSystem(transform);
 
-            var canvasObject = new GameObject("GSplat Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            canvasObject.transform.SetParent(transform, false);
-            Canvas canvas = canvasObject.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 100;
+            Canvas canvas = UiFactory.CreateCanvas("GSplat Canvas", transform, 100);
             // Constant physical size: the joystick's dp sizes are handled in VirtualJoystick, the rest scales with dpi here.
-            CanvasScaler scaler = canvasObject.GetComponent<CanvasScaler>();
+            CanvasScaler scaler = canvas.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
             scaler.scaleFactor = VirtualJoystick.DpToPixels(1f);
 
             // Everything sits inside a panel that follows Screen.safeArea, so notches and rounded corners never clip it.
-            var safeObject = new GameObject("Safe Area", typeof(RectTransform));
-            safeObject.transform.SetParent(canvas.transform, false);
-            safeArea = (RectTransform)safeObject.transform;
-            ApplySafeArea();
+            RectTransform safeArea = UiFactory.CreateSafeArea(canvas.transform);
 
-            statusText = CreateText(safeArea, "Status", new Vector2(0.5f, 1f), new Vector2(0f, -24f), 18, TextAnchor.UpperCenter);
-            noticeText = CreateText(safeArea, "Notice", new Vector2(0.5f, 1f), new Vector2(0f, -52f), 14, TextAnchor.UpperCenter);
+            statusText = UiFactory.CreateText(safeArea, "Status", new Vector2(0.5f, 1f), new Vector2(0f, -24f), TextSize, 18, TextAnchor.UpperCenter);
+            noticeText = UiFactory.CreateText(safeArea, "Notice", new Vector2(0.5f, 1f), new Vector2(0f, -52f), TextSize, 14, TextAnchor.UpperCenter);
             noticeText.color = new Color(1f, 0.85f, 0.4f);
             noticeText.enabled = false;
 
@@ -97,37 +84,6 @@ namespace GSplat
 
             joystick = CreateJoystick(safeArea);
             CreateResetButton(safeArea);
-        }
-
-        /// <summary>Anchors the panel to the safe area expressed as fractions of the screen (works with any canvas scale).</summary>
-        private void ApplySafeArea()
-        {
-            appliedSafeArea = Screen.safeArea;
-            var min = new Vector2(appliedSafeArea.xMin / Screen.width, appliedSafeArea.yMin / Screen.height);
-            var max = new Vector2(appliedSafeArea.xMax / Screen.width, appliedSafeArea.yMax / Screen.height);
-            safeArea.anchorMin = min;
-            safeArea.anchorMax = max;
-            safeArea.offsetMin = Vector2.zero;
-            safeArea.offsetMax = Vector2.zero;
-        }
-
-        private static Text CreateText(Transform parent, string name, Vector2 anchor, Vector2 offset, int fontSize, TextAnchor alignment)
-        {
-            var textObject = new GameObject(name, typeof(Text));
-            textObject.transform.SetParent(parent, false);
-            var rect = (RectTransform)textObject.transform;
-            rect.anchorMin = anchor;
-            rect.anchorMax = anchor;
-            rect.pivot = anchor;
-            rect.anchoredPosition = offset;
-            rect.sizeDelta = new Vector2(600f, 40f);
-            Text text = textObject.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = fontSize;
-            text.alignment = alignment;
-            text.color = Color.white;
-            text.raycastTarget = false;
-            return text;
         }
 
         private static VirtualJoystick CreateJoystick(Transform parent)
@@ -144,7 +100,7 @@ namespace GSplat
             zoneRect.anchoredPosition = new Vector2(zone * 0.5f + 24f, zone * 0.5f + 72f); // above the scene menu row
             zoneRect.sizeDelta = new Vector2(zone, zone);
             Image zoneImage = zoneObject.GetComponent<Image>();
-            zoneImage.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+            zoneImage.sprite = UiFactory.BuiltinSprite("UI/Skin/Knob.psd");
             zoneImage.color = new Color(1f, 1f, 1f, 0.25f);
 
             var knobObject = new GameObject("Knob", typeof(Image));
@@ -163,25 +119,9 @@ namespace GSplat
 
         private void CreateResetButton(Transform parent)
         {
-            var buttonObject = new GameObject("Reset", typeof(Image), typeof(Button));
-            buttonObject.transform.SetParent(parent, false);
-            var rect = (RectTransform)buttonObject.transform;
-            rect.anchorMin = new Vector2(1f, 0f);
-            rect.anchorMax = new Vector2(1f, 0f);
-            rect.pivot = new Vector2(1f, 0f);
-            rect.anchoredPosition = new Vector2(-24f, 72f); // above the scene menu row
-            rect.sizeDelta = new Vector2(96f, 48f);
-            Image image = buttonObject.GetComponent<Image>();
-            image.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/UISprite.psd");
-            image.type = Image.Type.Sliced;
-            image.color = new Color(1f, 1f, 1f, 0.6f);
-
-            Text label = CreateText(buttonObject.transform, "Label", new Vector2(0.5f, 0.5f), Vector2.zero, 16, TextAnchor.MiddleCenter);
-            label.text = "Reset";
-            label.color = Color.black;
-            ((RectTransform)label.transform).sizeDelta = rect.sizeDelta;
-
-            buttonObject.GetComponent<Button>().onClick.AddListener(() => flyCamera?.ResetToSpawn());
+            // Bottom-right corner, above the scene menu row.
+            Button reset = UiFactory.CreateButton(parent, "Reset", new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-24f, 72f), new Vector2(96f, 48f), 0.6f, "Reset", 16);
+            reset.onClick.AddListener(() => flyCamera?.ResetToSpawn());
         }
 
         private void OnState(WorldLoadState state)

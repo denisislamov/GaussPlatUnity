@@ -90,6 +90,15 @@ namespace GSplat.Tests
                         yield return null;
                     }
 
+                    // The CPU sorter is asynchronous and test frames are shorter than its job: make sure the order is in
+                    // before the capture, otherwise a busy machine renders the frame with no splats at all.
+                    if (renderer.Sorter is CpuCountingSorter cpuSorter)
+                    {
+                        cpuSorter.CompleteNow();
+                        camera.Render();
+                        yield return null;
+                    }
+
                     capture = GoldenImage.Capture(target);
                     GoldenImage.Assert(capture, name);
                 }

@@ -3,6 +3,37 @@
 Versions follow semantic versioning. The package version lives in `Packages/com.denisislamov.gsplat/package.json`
 and in `GSplatVersion.Current`; a test keeps them equal. Tags on `main` mark releases.
 
+## 0.2.1
+
+Readability release: the code was reorganized so that each file does one thing and the long methods read as a
+list of steps. Rendering output and frame times are the same as 0.2.0 (checked against the golden images, two new
+ones of real scenes included, and the frame-time tests).
+
+- `GaussianSplatRenderer.TryPrepare` is three named steps; the per-camera state has its own file.
+- `SplatCameraView` carries the camera data both sorters need; the CPU job and the compute kernel read the same
+  struct. `ISplatSorter.PrepareOnMainThread` is now `Sort`, and `NeedsCompute` is gone (ask for `DrawArgs`).
+- The vertex shader is load, project, footprint, cull, corner, color; the quad math lives in `GSplatCore.hlsl`.
+- `SplatGpuData` upload paths, the PLY header parser and the world descriptor writer are split into small methods.
+- UI built in code (viewer overlay, scene-switch canvas) goes through `UiFactory`; one safe-area calculation.
+- Scene generators share `SceneObjects`; the viewer and InnerTest scenes were regenerated.
+- Web page hooks (`LoadFromPage`, `PauseFromPage`, `ResumeFromPage`) moved from `WorldLoader` to a small
+  `WebPageBridge` component on the same object; the page template is unchanged.
+- Tests: shared test assembly, real-scene golden images, chunk upload readback, safe area, scene generators,
+  camera view (90 EditMode, 61 PlayMode).
+
+Known limits, each marked with a TODO in the code:
+
+- SPZ version 4 (zstd) is recognized and refused; there is no managed zstd decoder yet.
+- GPU rotation is 8-bit "first three"; colors above 1.0 (HDR trainers) are clamped when packing.
+- One SH texture caps the splat count at SH degree 3; a second texture would lift it.
+- Building the GPU layout runs Burst jobs on the main thread (100 to 300 ms per 500k); on the web the decoders
+  are not time-sliced yet, so a big file freezes the page for that long.
+- The CPU copy of the packed data stays in memory after the upload (8 MB per 500k).
+- The level crossfade draws both levels for three seconds; a dithered swap would be cheaper on weak phones.
+- The vertex clip of culled splats has not been measured on Mali; it may disable some tile-based fast paths.
+- The sort order texture is passed to the draw pass as a raw RenderTexture, not an RTHandle; RenderGraph cannot
+  reorder the two passes, so it is safe, but an import would be cleaner.
+
 ## 0.2.0
 
 - Sorting by distance to the camera (Spark's choice), logarithmic 16-bit depth keys, frustum and sub-pixel
