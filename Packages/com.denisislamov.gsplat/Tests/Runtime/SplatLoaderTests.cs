@@ -47,7 +47,7 @@ namespace GSplat.Tests
         public IEnumerator BuildsFromSpzBytesAndReportsStages()
         {
             byte[] bytes;
-            using (SplatCloud cloud = TestCloudsRuntime.Random(2000, 1))
+            using (SplatCloud cloud = TestClouds.Random(2000, 1))
             {
                 bytes = SpzWriter.Write(cloud);
             }
@@ -74,7 +74,7 @@ namespace GSplat.Tests
         public IEnumerator LoadsFromAFileUrl()
         {
             string path = Path.Combine(Application.temporaryCachePath, "gsplat-loader-test.spz");
-            using (SplatCloud cloud = TestCloudsRuntime.Random(500, 0))
+            using (SplatCloud cloud = TestClouds.Random(500, 0))
             {
                 File.WriteAllBytes(path, SpzWriter.Write(cloud));
             }
@@ -106,7 +106,7 @@ namespace GSplat.Tests
         public IEnumerator CorruptedSpzIsCorrupted()
         {
             byte[] bytes;
-            using (SplatCloud cloud = TestCloudsRuntime.Random(100, 0))
+            using (SplatCloud cloud = TestClouds.Random(100, 0))
             {
                 bytes = SpzWriter.Write(cloud);
             }

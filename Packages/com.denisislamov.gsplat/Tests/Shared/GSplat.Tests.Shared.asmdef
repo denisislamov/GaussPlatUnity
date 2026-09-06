@@ -1,16 +1,13 @@
 {
-    "name": "GSplat.Tests.Runtime",
+    "name": "GSplat.Tests.Shared",
     "rootNamespace": "GSplat.Tests",
     "references": [
         "GSplat",
-        "GSplat.Tests.Shared",
         "Unity.Collections",
         "Unity.Mathematics",
-        "Unity.PerformanceTesting",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.Universal.Runtime",
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
+        "UnityEngine.TestRunner"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

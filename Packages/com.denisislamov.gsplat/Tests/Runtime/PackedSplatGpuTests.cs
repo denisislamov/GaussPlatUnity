@@ -19,7 +19,7 @@ namespace GSplat.Tests
             if (shader == null) Assert.Ignore("GSplatUnpackTest.compute is not in a Resources folder.");
 
             const int count = 70000; // two chunks, second one partial
-            using (SplatCloud cloud = TestCloudsRuntime.Random(count, 0, 3, 20f))
+            using (SplatCloud cloud = TestClouds.Random(count, 0, 3, 20f))
             {
                 var options = new SplatImportOptions { SourceCoordinateSystem = SplatCoordinateSystem.Ruf, PruneAlphaBelow = 0f };
                 using (GsplatData data = GsplatBuilder.Build(cloud, options))
