@@ -42,8 +42,11 @@ namespace GSplat
         /// <summary>Texels per splat in <see cref="ShTexture"/>: 3, 6 or 12 for degrees 1, 2, 3 (9, 24, 45 bytes rounded up to 4).</summary>
         public int ShTexelsPerSplat { get; private set; }
 
-        /// <summary>Chunk centers as an RGBAFloat texture, one texel per chunk, for the vertex shader (uniform arrays would hit GLES 3.0 limits).</summary>
-        public Texture2D ChunkCenterTexture { get; private set; }
+        /// <summary>
+        /// Chunk position ranges as an RGBAFloat texture, two texels per chunk: texel 2c = PositionMin, texel 2c+1 = PositionExtent.
+        /// A texture rather than a uniform array because GLES 3.0 guarantees very few uniform vectors.
+        /// </summary>
+        public Texture2D ChunkRangeTexture { get; private set; }
 
         /// <summary>Chunks whose texels are already on the GPU: [0, UploadedChunkCount).</summary>
         public int UploadedChunkCount { get; private set; }
@@ -52,7 +55,7 @@ namespace GSplat
 
         /// <summary>Approximate GPU memory held by this object, for the memory budget (E6-T4).</summary>
         public long GpuMemoryBytes => (long)SplatTexture.width * SplatTexture.height * 4 + (long)ChunkBuffer.count * ChunkBuffer.stride
-            + (ShTexture != null ? (long)ShTexture.width * ShTexture.height * 4 : 0) + (long)ChunkCenterTexture.width * 16;
+            + (ShTexture != null ? (long)ShTexture.width * ShTexture.height * 4 : 0) + (long)ChunkRangeTexture.width * 16;
 
         private readonly GsplatData source;
         private readonly bool canCopyRegions;
@@ -95,15 +98,20 @@ namespace GSplat
             ChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, ChunkCount), 48) { name = "GSplat Chunks" };
             if (ChunkCount > 0) ChunkBuffer.SetData(data.Chunks);
 
-            ChunkCenterTexture = new Texture2D(math.max(1, ChunkCount), 1, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.None)
+            ChunkRangeTexture = new Texture2D(math.max(2, ChunkCount * 2), 1, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.None)
             {
-                name = "GSplat Chunk Centers",
+                name = "GSplat Chunk Ranges",
                 filterMode = FilterMode.Point,
                 wrapMode = TextureWrapMode.Clamp
             };
-            NativeArray<float4> centers = ChunkCenterTexture.GetPixelData<float4>(0);
-            for (int chunkIndex = 0; chunkIndex < ChunkCount; chunkIndex++) centers[chunkIndex] = new float4(data.Chunks[chunkIndex].Center, 0f);
-            ChunkCenterTexture.Apply(false, true);
+            NativeArray<float4> ranges = ChunkRangeTexture.GetPixelData<float4>(0);
+            for (int chunkIndex = 0; chunkIndex < ChunkCount; chunkIndex++)
+            {
+                ranges[chunkIndex * 2] = new float4(data.Chunks[chunkIndex].PositionMin, 0f);
+                ranges[chunkIndex * 2 + 1] = new float4(data.Chunks[chunkIndex].PositionExtent, 0f);
+            }
+
+            ChunkRangeTexture.Apply(false, true);
 
             if (data.Sh.Length > 0)
             {
@@ -212,7 +220,7 @@ namespace GSplat
             if (SplatTexture != null) { SplatObjectUtility.Destroy(SplatTexture); SplatTexture = null; }
             if (stagingTexture != null) { SplatObjectUtility.Destroy(stagingTexture); stagingTexture = null; }
             if (ShTexture != null) { SplatObjectUtility.Destroy(ShTexture); ShTexture = null; }
-            if (ChunkCenterTexture != null) { SplatObjectUtility.Destroy(ChunkCenterTexture); ChunkCenterTexture = null; }
+            if (ChunkRangeTexture != null) { SplatObjectUtility.Destroy(ChunkRangeTexture); ChunkRangeTexture = null; }
             ChunkBuffer?.Dispose();
             ChunkBuffer = null;
         }

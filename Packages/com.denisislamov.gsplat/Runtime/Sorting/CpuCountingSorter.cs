@@ -91,6 +91,7 @@ namespace GSplat
             if (visibleChunksCopy.IsCreated) visibleChunksCopy.Dispose();
             visibleChunksCopy = new NativeArray<int>(input.VisibleChunks, Allocator.Persistent);
 
+            SplatSortKeys.LogRange(input.MinDepth, input.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
             var keyJob = new KeyJob
             {
                 Packed = input.Data.Packed,
@@ -98,11 +99,13 @@ namespace GSplat
                 VisibleChunks = visibleChunksCopy,
                 CameraPosition = input.CameraPositionLocal,
                 CameraForward = input.CameraForwardLocal,
-                MinDepth = input.MinDepth,
-                InverseDepthRange = 1f / math.max(input.MaxDepth - input.MinDepth, 1e-6f),
+                Radial = input.Radial,
+                LogMinDepth = logMinDepth,
+                InverseLogDepthRange = inverseLogDepthRange,
                 CullInKeys = input.CullInKeys,
                 LocalToClip = input.LocalToClip,
                 FocalPixelsY = input.FocalPixelsY,
+                ScreenSize = input.ScreenSize,
                 MaxStdDev = input.MaxStdDev,
                 MinPixelRadius = input.MinPixelRadius,
                 Keys = keys
@@ -161,11 +164,13 @@ namespace GSplat
             [ReadOnly] public NativeArray<int> VisibleChunks;
             public float3 CameraPosition;
             public float3 CameraForward;
-            public float MinDepth;
-            public float InverseDepthRange;
+            public bool Radial;
+            public float LogMinDepth;
+            public float InverseLogDepthRange;
             public bool CullInKeys;
             public float4x4 LocalToClip;
             public float FocalPixelsY;
+            public float2 ScreenSize;
             public float MaxStdDev;
             public float MinPixelRadius;
             [WriteOnly] public NativeArray<uint> Keys;
@@ -182,16 +187,16 @@ namespace GSplat
                 }
 
                 int splatIndex = chunkIndex * SplatChunkInfo.Size + local;
-                PackedSplat.Unpack(Packed[splatIndex], out float3 relative, out float3 logScale, out _, out _, out _);
-                float3 position = relative + chunk.Center;
-                if (CullInKeys && !SplatVisibility.IsVisible(position, math.exp(logScale), LocalToClip, FocalPixelsY, MaxStdDev, MinPixelRadius))
+                PackedSplat.Unpack(Packed[splatIndex], out float3 normalized, out float3 logScale, out _, out _, out _);
+                float3 position = chunk.PositionOf(normalized);
+                if (CullInKeys && !SplatVisibility.IsVisible(position, math.exp(logScale), LocalToClip, FocalPixelsY, ScreenSize, MaxStdDev, MinPixelRadius))
                 {
                     Keys[slot] = SplatSortKeys.EmptyKey;
                     return;
                 }
 
-                float depth = SplatSortKeys.ViewDepth(position, CameraPosition, CameraForward);
-                Keys[slot] = SplatSortKeys.DepthToKey(depth, MinDepth, InverseDepthRange);
+                float metric = SplatSortKeys.SortMetric(position, CameraPosition, CameraForward, Radial);
+                Keys[slot] = SplatSortKeys.DepthToKey(metric, LogMinDepth, InverseLogDepthRange);
             }
         }
 

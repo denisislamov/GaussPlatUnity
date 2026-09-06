@@ -55,7 +55,7 @@ namespace GSplat.Sandbox
             visibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, data.ChunkCount, sizeof(int));
             visibleChunkBuffer.SetData(visibleChunks);
 
-            SplatSortKeys.DepthRange(data.Chunks, visibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
+            SplatSortKeys.DepthRange(data.Chunks, visibleChunks, CameraPosition, CameraForward, true, out float minDepth, out float maxDepth);
             input = new SplatSortInput
             {
                 Data = data,
@@ -65,6 +65,7 @@ namespace GSplat.Sandbox
                 VisibleSplatCount = data.SplatCount,
                 CameraPositionLocal = CameraPosition,
                 CameraForwardLocal = CameraForward,
+                Radial = true,
                 MinDepth = minDepth,
                 MaxDepth = maxDepth
             };

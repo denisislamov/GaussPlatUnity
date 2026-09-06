@@ -109,9 +109,9 @@ namespace GSplat.Tests
                 {
                     for (int splatIndex = 0; splatIndex < data.SplatCount; splatIndex++)
                     {
-                        PackedSplat.Unpack(data.Packed[splatIndex], out float3 relative, out _, out _, out _, out _);
-                        float3 reconstructed = relative + data.Chunks[splatIndex / SplatChunkInfo.Size].Center;
-                        Assert.That(math.distance(expected[splatIndex], reconstructed), Is.LessThan(0.05f), "splat " + splatIndex);
+                        PackedSplat.Unpack(data.Packed[splatIndex], out float3 normalized, out _, out _, out _, out _);
+                        float3 reconstructed = data.Chunks[splatIndex / SplatChunkInfo.Size].PositionOf(normalized);
+                        Assert.That(math.distance(expected[splatIndex], reconstructed), Is.LessThan(0.002f), "splat " + splatIndex);
                     }
                 }
             }

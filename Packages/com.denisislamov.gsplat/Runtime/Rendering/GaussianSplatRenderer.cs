@@ -23,7 +23,7 @@ namespace GSplat
         private static readonly int SplatsId = Shader.PropertyToID("_Splats");
         private static readonly int OrderId = Shader.PropertyToID("_Order");
         private static readonly int ShId = Shader.PropertyToID("_Sh");
-        private static readonly int ChunkCentersId = Shader.PropertyToID("_ChunkCenters");
+        private static readonly int ChunkRangesId = Shader.PropertyToID("_ChunkRanges");
         private static readonly int MaxStdDevId = Shader.PropertyToID("_MaxStdDev");
         private static readonly int OpacityId = Shader.PropertyToID("_Opacity");
         private static readonly int BrightnessId = Shader.PropertyToID("_Brightness");
@@ -64,6 +64,8 @@ namespace GSplat
 
         [Header("Engine")]
         [SerializeField] private SplatSorterKind sorterKind = SplatSorterKind.Auto;
+        [SerializeField, Tooltip("Sort by distance to the camera (what InnerTest viewer does; turning the camera keeps the order valid) instead of by view depth (classic 3DGS).")]
+        private bool sortRadial = true;
         [SerializeField, Min(1), Tooltip("Chunks (65k splats, 1 MB) uploaded per frame. Higher = faster appearance, longer frame.")]
         private int uploadChunksPerFrame = 2;
         [SerializeField] private SplatDebugMode debugMode = SplatDebugMode.None;
@@ -128,6 +130,7 @@ namespace GSplat
         public float Opacity { get => opacity; set => opacity = Mathf.Clamp01(value); }
         public bool ConvertSrgbToLinear { get => convertSrgbToLinear; set => convertSrgbToLinear = value; }
         public SplatSorterKind SorterKind => sorterKind;
+        public bool SortRadial { get => sortRadial; set => sortRadial = value; }
 
         /// <summary>Switches the sorter at runtime (quality fallback, tests). Rebuilds it if the data is already on the GPU.</summary>
         public void SetSorterKind(SplatSorterKind kind)
@@ -334,7 +337,7 @@ namespace GSplat
                 state.UploadedVisibleHash = hash;
             }
 
-            SplatSortKeys.DepthRange(data.Chunks, visible, cameraPositionLocal, cameraForwardLocal, out float minDepth, out float maxDepth);
+            SplatSortKeys.DepthRange(data.Chunks, visible, cameraPositionLocal, cameraForwardLocal, sortRadial, out float minDepth, out float maxDepth);
             // Per-splat culling in the key pass needs the projection; it assumes a perspective camera (w = depth).
             Matrix4x4 projection = camera.projectionMatrix;
             var input = new SplatSortInput
@@ -346,11 +349,13 @@ namespace GSplat
                 VisibleSplatCount = visibleSplats,
                 CameraPositionLocal = cameraPositionLocal,
                 CameraForwardLocal = cameraForwardLocal,
+                Radial = sortRadial,
                 MinDepth = minDepth,
                 MaxDepth = maxDepth,
                 CullInKeys = !camera.orthographic,
                 LocalToClip = projection * camera.worldToCameraMatrix * localToWorld,
                 FocalPixelsY = Mathf.Abs(projection.m11) * camera.pixelHeight * 0.5f,
+                ScreenSize = new float2(camera.pixelWidth, camera.pixelHeight),
                 MaxStdDev = maxStdDev,
                 MinPixelRadius = minPixelRadius
             };
@@ -358,7 +363,7 @@ namespace GSplat
             // The GPU sorter re-sorts for every camera that draws (its order texture is shared), so with two cameras
             // it works every frame; the policy only saves work while a single camera stands still.
             double now = Time.realtimeSinceStartupAsDouble;
-            bool resort = state.Policy.ShouldResort(cameraPositionLocal, cameraForwardLocal, hash, now) || (sorter.NeedsCompute && cameraStates.Count > 1);
+            bool resort = state.Policy.ShouldResort(cameraPositionLocal, cameraForwardLocal, hash, now, sortRadial) || (sorter.NeedsCompute && cameraStates.Count > 1);
             sorter.PrepareOnMainThread(input, resort);
             if (resort) state.Policy.MarkSorted(cameraPositionLocal, cameraForwardLocal, hash, now);
 
@@ -383,7 +388,7 @@ namespace GSplat
         {
             properties.SetTexture(SplatsId, gpu.SplatTexture);
             properties.SetTexture(OrderId, sorter.OrderTexture);
-            properties.SetTexture(ChunkCentersId, gpu.ChunkCenterTexture);
+            properties.SetTexture(ChunkRangesId, gpu.ChunkRangeTexture);
             int effectiveShDegree = gpu.ShTexture != null ? math.min(shDegree, gpu.ShDegree) : 0;
             properties.SetTexture(ShId, gpu.ShTexture != null ? gpu.ShTexture : Texture2D.blackTexture);
             properties.SetInt(ShDegreeId, effectiveShDegree);

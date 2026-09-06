@@ -40,16 +40,19 @@ namespace GSplat.Tests
             Positions = new float3[Data.SplatCount];
             for (int splatIndex = 0; splatIndex < Data.SplatCount; splatIndex++)
             {
-                PackedSplat.Unpack(Data.Packed[splatIndex], out float3 relative, out _, out _, out _, out _);
-                Positions[splatIndex] = relative + Data.Chunks[splatIndex / SplatChunkInfo.Size].Center;
+                PackedSplat.Unpack(Data.Packed[splatIndex], out float3 normalized, out _, out _, out _, out _);
+                Positions[splatIndex] = Data.Chunks[splatIndex / SplatChunkInfo.Size].PositionOf(normalized);
             }
         }
 
+        public bool Radial;
+
         public SplatSortInput Input()
         {
-            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
+            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, Radial, out float minDepth, out float maxDepth);
             return new SplatSortInput
             {
+                Radial = Radial,
                 Data = Data,
                 Gpu = Gpu,
                 VisibleChunks = VisibleChunks,
@@ -95,8 +98,10 @@ namespace GSplat.Tests
         {
             Assert.AreEqual(Data.SplatCount, order.Count, "slot count");
             var seen = new bool[Data.SplatCount];
-            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, out float minDepth, out float maxDepth);
-            float bucketSize = (maxDepth - minDepth) / SplatSortKeys.MaxKey;
+            SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, Radial, out float minDepth, out float maxDepth);
+            SplatSortKeys.LogRange(minDepth, maxDepth, out _, out float inverseLogRange);
+            // Keys are linear in log(depth): one bucket spans depth * (ratio - 1).
+            float ratio = math.exp(1f / (inverseLogRange * SplatSortKeys.MaxKey));
             float previousDepth = float.MaxValue;
             for (int slot = 0; slot < order.Count; slot++)
             {
@@ -105,7 +110,8 @@ namespace GSplat.Tests
                 Assert.IsFalse(seen[splatIndex], "index appears twice: " + splatIndex);
                 seen[splatIndex] = true;
 
-                float depth = SplatSortKeys.ViewDepth(Positions[splatIndex], CameraPosition, CameraForward);
+                float depth = SplatSortKeys.SortMetric(Positions[splatIndex], CameraPosition, CameraForward, Radial);
+                float bucketSize = previousDepth == float.MaxValue ? 0f : math.max(previousDepth, SplatSortKeys.MinKeyDepth) * (ratio - 1f);
                 Assert.That(depth, Is.LessThanOrEqualTo(previousDepth + bucketSize * 1.01f + 1e-3f), "order breaks at slot " + slot);
                 previousDepth = depth;
             }

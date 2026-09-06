@@ -28,11 +28,12 @@ namespace GSplat
         /// <summary>RGBA8 texels per splat: one per uint of the layout.</summary>
         public const int TexelsPerSplat = 4;
 
-        public static uint4 Pack(float3 positionRelativeToChunk, float3 logScale, float4 rotationXyzw, float3 displayColor, float alpha)
+        /// <param name="positionNormalized">Position as a fraction of the chunk's unpadded bounds, each component in [0, 1].</param>
+        public static uint4 Pack(float3 positionNormalized, float3 logScale, float4 rotationXyzw, float3 displayColor, float alpha)
         {
-            uint posX = math.f32tof16(positionRelativeToChunk.x);
-            uint posY = math.f32tof16(positionRelativeToChunk.y);
-            uint posZ = math.f32tof16(positionRelativeToChunk.z);
+            uint posX = EncodeUnorm16(positionNormalized.x);
+            uint posY = EncodeUnorm16(positionNormalized.y);
+            uint posZ = EncodeUnorm16(positionNormalized.z);
 
             uint scaleX = SpzQuantization.EncodeLogScale(logScale.x);
             uint scaleY = SpzQuantization.EncodeLogScale(logScale.y);
@@ -52,12 +53,13 @@ namespace GSplat
                 r | (g << 8) | (b << 16) | (a << 24));
         }
 
-        public static void Unpack(uint4 packed, out float3 positionRelativeToChunk, out float3 logScale, out float4 rotationXyzw, out float3 displayColor, out float alpha)
+        /// <param name="positionNormalized">Fraction of the chunk's unpadded bounds; see SplatChunkInfo.PositionOf.</param>
+        public static void Unpack(uint4 packed, out float3 positionNormalized, out float3 logScale, out float4 rotationXyzw, out float3 displayColor, out float alpha)
         {
-            positionRelativeToChunk = new float3(
-                math.f16tof32(packed.x & 0xFFFF),
-                math.f16tof32(packed.x >> 16),
-                math.f16tof32(packed.y & 0xFFFF));
+            positionNormalized = new float3(
+                (packed.x & 0xFFFF) / 65535f,
+                (packed.x >> 16) / 65535f,
+                (packed.y & 0xFFFF) / 65535f);
 
             logScale = new float3(
                 SpzQuantization.DecodeLogScale((byte)((packed.y >> 16) & 0xFF)),
@@ -87,6 +89,11 @@ namespace GSplat
         private static uint EncodeUnorm8(float value)
         {
             return (uint)math.clamp((int)math.round(value * 255f), 0, 255);
+        }
+
+        private static uint EncodeUnorm16(float value)
+        {
+            return (uint)math.clamp((int)math.round(value * 65535f), 0, 65535);
         }
     }
 }

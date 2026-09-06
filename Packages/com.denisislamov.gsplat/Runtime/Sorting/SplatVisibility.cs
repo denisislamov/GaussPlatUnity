@@ -12,14 +12,13 @@ namespace GSplat
     [BurstCompile]
     public static class SplatVisibility
     {
-        /// <summary>How far outside the screen (in NDC units) a splat center may be and still draw; covers the largest reasonable radius.</summary>
-        public const float NdcMargin = 0.3f;
-
         /// <summary>
         /// <paramref name="localToClip"/> = projection x view x localToWorld. <paramref name="focalPixelsY"/> = |P[1][1]| x height / 2.
         /// The radius is the splat's own (before the 0.3 px dilation): the largest half-axis projected at the splat's depth, a conservative upper bound.
+        /// A splat is off screen only when its whole quad is: phone captures have 10 m background splats whose center is
+        /// far outside the view while they cover half the frame (culling those by center alone lost 3 dB against Spark).
         /// </summary>
-        public static bool IsVisible(float3 positionLocal, float3 scale, in float4x4 localToClip, float focalPixelsY, float maxStdDev, float minPixelRadius)
+        public static bool IsVisible(float3 positionLocal, float3 scale, in float4x4 localToClip, float focalPixelsY, float2 screenSize, float maxStdDev, float minPixelRadius)
         {
             float4 clip = math.mul(localToClip, new float4(positionLocal, 1f));
             // For a perspective camera w is the view depth; at or behind the camera plane nothing can be drawn.
@@ -29,7 +28,8 @@ namespace GSplat
             if (radiusPixels < minPixelRadius) return false;
 
             float2 ndc = clip.xy / clip.w;
-            return math.all(math.abs(ndc) <= 1f + NdcMargin);
+            float2 marginNdc = radiusPixels * 2f / screenSize; // pixels to NDC: the screen is 2 NDC units wide
+            return math.all(math.abs(ndc) <= 1f + marginNdc);
         }
     }
 }

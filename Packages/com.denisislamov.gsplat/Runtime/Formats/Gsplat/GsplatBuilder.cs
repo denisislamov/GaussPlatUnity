@@ -97,10 +97,9 @@ namespace GSplat
                     largestScale = math.max(largestScale, math.cmax(math.exp(ordered.LogScales[splatIndex])));
                 }
 
-                // Centers alone under-estimate what the chunk draws: a splat reaches ~3 standard deviations out.
-                // Padding symmetrically keeps the center (and so the packed positions) unchanged.
-                float3 padding = new float3(3f * largestScale);
-                data.Chunks[chunkIndex] = new SplatChunkInfo(count, min - padding, max + padding);
+                // Centers alone under-estimate what the chunk draws: a splat reaches ~3 standard deviations out. The
+                // padding is kept separately so positions can be packed against the tight (unpadded) bounds.
+                data.Chunks[chunkIndex] = new SplatChunkInfo(count, min, max, 3f * largestScale);
             }
         }
     }

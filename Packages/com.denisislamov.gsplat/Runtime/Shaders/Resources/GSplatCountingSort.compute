@@ -21,13 +21,16 @@
 #define BUCKETS_PER_THREAD (BUCKET_COUNT / THREADS) // 512
 #define CHUNK_SIZE 65536u
 
-// Mirrors SplatChunkInfo (48 bytes): count + padding, bounds min, bounds max.
+// Mirrors SplatChunkInfo (48 bytes): count, padding (float bits), 2 unused, padded bounds min, padded bounds max.
 struct ChunkInfo
 {
     uint4 countAndPadding;
     float4 boundsMin;
     float4 boundsMax;
 };
+
+float3 ChunkPositionMin(ChunkInfo chunk) { return chunk.boundsMin.xyz + asfloat(chunk.countAndPadding.y); }
+float3 ChunkPositionExtent(ChunkInfo chunk) { return max(chunk.boundsMax.xyz - asfloat(chunk.countAndPadding.y) - ChunkPositionMin(chunk), 1e-6); }
 
 Texture2D<float4> _Splats;
 StructuredBuffer<ChunkInfo> _Chunks;
@@ -40,11 +43,13 @@ RWStructuredBuffer<uint> _DrawArgs;       // indirect draw args; [1] = instance 
 uint _SlotCount;                          // visible chunks x 65536
 float3 _CameraPosition;                   // in the splat object's local space
 float3 _CameraForward;
-float _MinDepth;
-float _InverseDepthRange;
+float _LogMinDepth;        // log of the nearest depth of the key range (see SplatSortKeys.cs: log depth keys)
+float _InverseLogDepthRange;
 int _CullInKeys;                          // 1 = skip splats that cannot produce pixels (SplatVisibility.cs twin below)
+int _SortRadial;                          // 1 = order by distance to the camera (Spark), 0 = by view depth
 float4x4 _LocalToClip;
 float _FocalPixelsY;
+float2 _ScreenSize;
 float _MaxStdDev;
 float _MinPixelRadius;
 
@@ -76,16 +81,16 @@ void ComputeKeys(uint3 id : SV_DispatchThreadID)
 
     uint splatIndex = chunkIndex * CHUNK_SIZE + local;
     GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
-    float3 center = (chunk.boundsMin.xyz + chunk.boundsMax.xyz) * 0.5;
-    float3 position = s.position + center;
-    if (_CullInKeys != 0 && !GSplatKeyPassVisible(position, s.scale, _LocalToClip, _FocalPixelsY, _MaxStdDev, _MinPixelRadius))
+    float3 position = ChunkPositionMin(chunk) + s.position * ChunkPositionExtent(chunk);
+    if (_CullInKeys != 0 && !GSplatKeyPassVisible(position, s.scale, _LocalToClip, _FocalPixelsY, _ScreenSize, _MaxStdDev, _MinPixelRadius))
     {
         _Keys[slot] = EMPTY_KEY;
         return;
     }
 
-    float depth = dot(position - _CameraPosition, _CameraForward);
-    float normalized = saturate((depth - _MinDepth) * _InverseDepthRange);
+    float depth = _SortRadial != 0 ? length(position - _CameraPosition) : dot(position - _CameraPosition, _CameraForward);
+    // Log depth: near surfaces get millimeter buckets, the far background centimeters (SplatSortKeys.DepthToKey twin).
+    float normalized = saturate((log(max(depth, 0.01)) - _LogMinDepth) * _InverseLogDepthRange);
     uint key = MAX_KEY - (uint)(normalized * MAX_KEY + 0.5);
     _Keys[slot] = key;
     InterlockedAdd(_Histogram[key], 1);

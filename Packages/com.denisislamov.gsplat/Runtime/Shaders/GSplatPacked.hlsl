@@ -2,8 +2,8 @@
 #define GSPLAT_PACKED_INCLUDED
 
 // Shader-side twin of PackedSplat.cs. Keep the two in sync; PackedSplatGpuTests compares them.
-//   uint0: pos.x f16 | pos.y f16 << 16
-//   uint1: pos.z f16 | logScale.x u8 << 16 | logScale.y u8 << 24
+//   uint0: pos.x u16 | pos.y u16 << 16      (fractions of the chunk's unpadded bounds)
+//   uint1: pos.z u16 | logScale.x u8 << 16 | logScale.y u8 << 24
 //   uint2: logScale.z u8 | rot.x u8 << 8 | rot.y u8 << 16 | rot.z u8 << 24
 //   uint3: r u8 | g u8 << 8 | b u8 << 16 | alpha u8 << 24
 
@@ -11,7 +11,7 @@
 
 struct GSplatUnpacked
 {
-    float3 position;   // relative to the chunk center
+    float3 position;   // fraction of the chunk's position range, each component 0..1
     float3 scale;      // ellipsoid half-axes (exp of the log scale)
     float4 rotation;   // xyzw, w >= 0
     float3 color;      // display color, 0..1
@@ -67,7 +67,7 @@ float4 GSplatDecodeRotation(uint x, uint y, uint z)
 GSplatUnpacked GSplatUnpack(uint4 lo)
 {
     GSplatUnpacked s;
-    s.position = float3(f16tof32(lo.x & 0xFFFF), f16tof32(lo.x >> 16), f16tof32(lo.y & 0xFFFF));
+    s.position = float3(lo.x & 0xFFFF, lo.x >> 16, lo.y & 0xFFFF) / 65535.0;
     s.scale = exp(float3(
         GSplatDecodeLogScale((lo.y >> 16) & 0xFF),
         GSplatDecodeLogScale((lo.y >> 24) & 0xFF),
@@ -76,6 +76,14 @@ GSplatUnpacked GSplatUnpack(uint4 lo)
     s.color = float3(lo.w & 0xFF, (lo.w >> 8) & 0xFF, (lo.w >> 16) & 0xFF) / 255.0;
     s.alpha = ((lo.w >> 24) & 0xFF) / 255.0;
     return s;
+}
+
+// Chunk c's position range from the range texture (texel 2c = min, 2c+1 = extent).
+float3 GSplatChunkPosition(Texture2D<float4> chunkRanges, uint chunkIndex, float3 normalized)
+{
+    float3 minimum = chunkRanges.Load(uint3(chunkIndex * 2u, 0, 0)).xyz;
+    float3 extent = chunkRanges.Load(uint3(chunkIndex * 2u + 1u, 0, 0)).xyz;
+    return minimum + normalized * extent;
 }
 
 #endif

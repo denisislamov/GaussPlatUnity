@@ -22,6 +22,7 @@ namespace GSplat.Tests
             {
                 byte[] bytes = GsplatFile.Serialize(original);
                 Assert.AreEqual(GsplatFile.HeaderSize + 2 * GsplatFile.ChunkEntrySize + 70000 * 16 + original.Sh.Length, bytes.Length);
+                Assert.AreEqual(original.Chunks[0].Padding, GsplatFile.Deserialize(bytes).Chunks[0].Padding, 1e-6f);
 
                 using (GsplatData loaded = GsplatFile.Deserialize(bytes))
                 {

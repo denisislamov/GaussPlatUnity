@@ -24,12 +24,14 @@ namespace GSplat
         private static readonly int SlotCountId = Shader.PropertyToID("_SlotCount");
         private static readonly int CameraPositionId = Shader.PropertyToID("_CameraPosition");
         private static readonly int CameraForwardId = Shader.PropertyToID("_CameraForward");
-        private static readonly int MinDepthId = Shader.PropertyToID("_MinDepth");
-        private static readonly int InverseDepthRangeId = Shader.PropertyToID("_InverseDepthRange");
+        private static readonly int LogMinDepthId = Shader.PropertyToID("_LogMinDepth");
+        private static readonly int InverseLogDepthRangeId = Shader.PropertyToID("_InverseLogDepthRange");
         private static readonly int DrawArgsId = Shader.PropertyToID("_DrawArgs");
         private static readonly int CullInKeysId = Shader.PropertyToID("_CullInKeys");
+        private static readonly int SortRadialId = Shader.PropertyToID("_SortRadial");
         private static readonly int LocalToClipId = Shader.PropertyToID("_LocalToClip");
         private static readonly int FocalPixelsYId = Shader.PropertyToID("_FocalPixelsY");
+        private static readonly int ScreenSizeId = Shader.PropertyToID("_ScreenSize");
         private static readonly int MaxStdDevId = Shader.PropertyToID("_MaxStdDev");
         private static readonly int MinPixelRadiusId = Shader.PropertyToID("_MinPixelRadius");
 
@@ -111,11 +113,14 @@ namespace GSplat
             commands.SetComputeIntParam(shader, SlotCountId, slotCount);
             commands.SetComputeVectorParam(shader, CameraPositionId, (Vector3)input.CameraPositionLocal);
             commands.SetComputeVectorParam(shader, CameraForwardId, (Vector3)input.CameraForwardLocal);
-            commands.SetComputeFloatParam(shader, MinDepthId, input.MinDepth);
-            commands.SetComputeFloatParam(shader, InverseDepthRangeId, 1f / math.max(input.MaxDepth - input.MinDepth, 1e-6f));
+            SplatSortKeys.LogRange(input.MinDepth, input.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
+            commands.SetComputeFloatParam(shader, LogMinDepthId, logMinDepth);
+            commands.SetComputeFloatParam(shader, InverseLogDepthRangeId, inverseLogDepthRange);
             commands.SetComputeIntParam(shader, CullInKeysId, input.CullInKeys ? 1 : 0);
+            commands.SetComputeIntParam(shader, SortRadialId, input.Radial ? 1 : 0);
             commands.SetComputeMatrixParam(shader, LocalToClipId, input.LocalToClip);
             commands.SetComputeFloatParam(shader, FocalPixelsYId, input.FocalPixelsY);
+            commands.SetComputeVectorParam(shader, ScreenSizeId, new Vector4(input.ScreenSize.x, input.ScreenSize.y, 0f, 0f));
             commands.SetComputeFloatParam(shader, MaxStdDevId, input.MaxStdDev);
             commands.SetComputeFloatParam(shader, MinPixelRadiusId, input.MinPixelRadius);
 

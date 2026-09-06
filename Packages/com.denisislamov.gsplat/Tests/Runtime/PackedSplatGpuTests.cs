@@ -35,11 +35,6 @@ namespace GSplat.Tests
 
                     Assert.That(uploads, Is.EqualTo(2).Or.EqualTo(1), "one upload per chunk, or one for everything on GPUs without region copy");
 
-                    var centers = new NativeArray<float4>(data.ChunkCount, Allocator.Temp);
-                    for (int chunkIndex = 0; chunkIndex < data.ChunkCount; chunkIndex++) centers[chunkIndex] = new float4(data.Chunks[chunkIndex].Center, 0f);
-                    var centerBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, data.ChunkCount, 16);
-                    centerBuffer.SetData(centers);
-                    centers.Dispose();
 
                     var positions = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, 16);
                     var scales = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, 16);
@@ -48,7 +43,7 @@ namespace GSplat.Tests
 
                     int kernel = shader.FindKernel("Unpack");
                     shader.SetTexture(kernel, "_Splats", gpu.SplatTexture);
-                    shader.SetBuffer(kernel, "_ChunkCenters", centerBuffer);
+                    shader.SetTexture(kernel, "_ChunkRanges", gpu.ChunkRangeTexture);
                     shader.SetBuffer(kernel, "_Positions", positions);
                     shader.SetBuffer(kernel, "_Scales", scales);
                     shader.SetBuffer(kernel, "_Rotations", rotations);
@@ -70,8 +65,8 @@ namespace GSplat.Tests
 
                     for (int splatIndex = 0; splatIndex < count; splatIndex += 7)
                     {
-                        PackedSplat.Unpack(data.Packed[splatIndex], out float3 relative, out float3 logScale, out float4 rotation, out float3 color, out float alpha);
-                        float3 expectedPosition = relative + data.Chunks[splatIndex / SplatChunkInfo.Size].Center;
+                        PackedSplat.Unpack(data.Packed[splatIndex], out float3 normalized, out float3 logScale, out float4 rotation, out float3 color, out float alpha);
+                        float3 expectedPosition = data.Chunks[splatIndex / SplatChunkInfo.Size].PositionOf(normalized);
                         Assert.That(math.distance(expectedPosition, gpuPositions[splatIndex].xyz), Is.LessThan(1e-3f), "position " + splatIndex);
                         Assert.AreEqual(alpha, gpuPositions[splatIndex].w, 1e-5f, "alpha " + splatIndex);
                         Assert.That(math.distance(math.exp(logScale), gpuScales[splatIndex].xyz), Is.LessThan(1e-4f * math.cmax(math.exp(logScale)) + 1e-6f), "scale " + splatIndex);
@@ -79,7 +74,6 @@ namespace GSplat.Tests
                         Assert.That(math.distance(color, gpuColors[splatIndex].xyz), Is.LessThan(1e-5f), "color " + splatIndex);
                     }
 
-                    centerBuffer.Dispose();
                     positions.Dispose();
                     scales.Dispose();
                     rotations.Dispose();

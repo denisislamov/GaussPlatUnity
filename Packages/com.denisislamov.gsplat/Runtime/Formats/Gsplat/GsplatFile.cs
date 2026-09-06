@@ -31,7 +31,7 @@ namespace GSplat
     /// Layout (little-endian):
     ///   header 44 bytes: magic "GSPC", version u32, splatCount u32, chunkCount u32, shDegree u8, flags u8,
     ///                    reserved u16, boundsMin 3 x f32, boundsMax 3 x f32
-    ///   chunk table: chunkCount x 28 bytes (splatCount u32, boundsMin 3 x f32, boundsMax 3 x f32)
+    ///   chunk table: chunkCount x 32 bytes (splatCount u32, padding f32, boundsMin 3 x f32, boundsMax 3 x f32; bounds are padded)
     ///   packed splats: splatCount x 16 bytes
     ///   SH: splatCount x shCoefficients x 3 bytes
     /// Bump Version and re-import when the layout changes; old files are refused, not migrated.
@@ -39,9 +39,9 @@ namespace GSplat
     public static class GsplatFile
     {
         public const uint Magic = 0x43505347; // "GSPC" as little-endian bytes
-        public const uint Version = 1;
+        public const uint Version = 2;
         public const int HeaderSize = 44;
-        public const int ChunkEntrySize = 28;
+        public const int ChunkEntrySize = 32;
         public const byte FlagAntialiased = 0x1;
 
         public static byte[] Serialize(GsplatData data)
@@ -70,8 +70,9 @@ namespace GSplat
                 SplatChunkInfo chunk = data.Chunks[chunkIndex];
                 Span<byte> entry = bytes.AsSpan(offset, ChunkEntrySize);
                 BinaryPrimitives.WriteUInt32LittleEndian(entry, (uint)chunk.SplatCount);
-                WriteFloat3(entry.Slice(4), chunk.BoundsMin);
-                WriteFloat3(entry.Slice(16), chunk.BoundsMax);
+                BinaryPrimitives.WriteInt32LittleEndian(entry.Slice(4), BitConverter.SingleToInt32Bits(chunk.Padding));
+                WriteFloat3(entry.Slice(8), chunk.BoundsMin);
+                WriteFloat3(entry.Slice(20), chunk.BoundsMax);
                 offset += ChunkEntrySize;
             }
 
@@ -129,7 +130,11 @@ namespace GSplat
                         throw new GsplatFileException(GsplatFileError.InvalidValue, $".gsplat chunk {chunkIndex} claims {chunkSplatCount} splats; expected {expectedInChunk}.");
                     }
 
-                    data.Chunks[chunkIndex] = new SplatChunkInfo(chunkSplatCount, ReadFloat3(entry.Slice(4)), ReadFloat3(entry.Slice(16)));
+                    float padding = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(entry.Slice(4)));
+                    // The file stores padded bounds; the constructor pads, so hand it the unpadded ones.
+                    float3 paddedMin = ReadFloat3(entry.Slice(8));
+                    float3 paddedMax = ReadFloat3(entry.Slice(20));
+                    data.Chunks[chunkIndex] = new SplatChunkInfo(chunkSplatCount, paddedMin + padding, paddedMax - padding, padding);
                     remaining -= chunkSplatCount;
                     offset += ChunkEntrySize;
                 }

@@ -10,13 +10,13 @@ namespace GSplat.Tests
     public sealed class GpuCountingSorterTests
     {
         [UnityTest]
-        public IEnumerator GpuOrderIsBackToFront([Values(1, 5000, 70000, 300000)] int count)
+        public IEnumerator GpuOrderIsBackToFront([Values(1, 5000, 70000, 300000)] int count, [Values(false, true)] bool radial)
         {
             if (!GpuCountingSorter.IsSupported) Assert.Ignore("No compute shaders on this device.");
             ComputeShader shader = GpuCountingSorter.LoadShader();
             Assert.IsNotNull(shader, "GSplatCountingSort.compute must be in Resources");
 
-            using (var scene = new SortTestScene(count))
+            using (var scene = new SortTestScene(count) { Radial = radial })
             using (var sorter = new GpuCountingSorter(shader, count))
             using (var commands = new CommandBuffer())
             {
@@ -35,9 +35,9 @@ namespace GSplat.Tests
     public sealed class CpuCountingSorterRuntimeTests
     {
         [UnityTest]
-        public IEnumerator CpuOrderIsBackToFrontAfterCollecting([Values(1, 5000, 70000)] int count)
+        public IEnumerator CpuOrderIsBackToFrontAfterCollecting([Values(1, 5000, 70000)] int count, [Values(false, true)] bool radial)
         {
-            using (var scene = new SortTestScene(count))
+            using (var scene = new SortTestScene(count) { Radial = radial })
             using (var sorter = new CpuCountingSorter(count))
             {
                 sorter.PrepareOnMainThread(scene.Input(), true);

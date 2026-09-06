@@ -28,6 +28,9 @@ namespace GSplat
         public float3 CameraPositionLocal;
         public float3 CameraForwardLocal;
 
+        /// <summary>Order by distance to the camera (Spark/InnerTest) instead of view depth (classic 3DGS). See SplatSortKeys.SortMetric.</summary>
+        public bool Radial;
+
         /// <summary>View depth of the nearest and farthest point of the visible chunk bounds; the 16-bit key spans this range.</summary>
         public float MinDepth;
         public float MaxDepth;
@@ -43,6 +46,9 @@ namespace GSplat
 
         /// <summary>|P[1][1]| x screen height / 2: pixels per unit at depth 1.</summary>
         public float FocalPixelsY;
+
+        /// <summary>Render target size in pixels, to turn a pixel radius into NDC for the off-screen test.</summary>
+        public float2 ScreenSize;
 
         public float MaxStdDev;
 

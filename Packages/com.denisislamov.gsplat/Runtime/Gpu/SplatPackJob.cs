@@ -5,7 +5,7 @@ using Unity.Mathematics;
 
 namespace GSplat
 {
-    /// <summary>Packs every splat of a cloud into the 16-byte GPU layout, relative to its chunk center. See <see cref="PackedSplat"/>.</summary>
+    /// <summary>Packs every splat of a cloud into the 16-byte GPU layout, positions as fractions of the chunk's unpadded bounds. See <see cref="PackedSplat"/>.</summary>
     [BurstCompile]
     public struct SplatPackJob : IJobParallelFor
     {
@@ -19,9 +19,9 @@ namespace GSplat
 
         public void Execute(int index)
         {
-            float3 chunkCenter = Chunks[index / SplatChunkInfo.Size].Center;
+            SplatChunkInfo chunk = Chunks[index / SplatChunkInfo.Size];
             Packed[index] = PackedSplat.Pack(
-                Positions[index] - chunkCenter,
+                (Positions[index] - chunk.PositionMin) / chunk.PositionExtent,
                 LogScales[index],
                 Rotations[index],
                 PackedSplat.DisplayColor(Colors[index]),

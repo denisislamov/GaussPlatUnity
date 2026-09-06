@@ -16,18 +16,19 @@ namespace GSplat.Tests
     /// </summary>
     public sealed class ComparisonCaptureTests
     {
-        private const string SamplePath = "Assets/Samples/Niantic/hornedlizard.spz";
         private const int Width = 540;
         private const int Height = 960;
 
         [UnityTest]
-        public IEnumerator CaptureLizardForSparkComparison()
+        public IEnumerator CaptureForSparkComparison([Values("hornedlizard", "racoonfamily")] string sample)
         {
 #if UNITY_EDITOR
-            if (!File.Exists(SamplePath)) Assert.Ignore("Sample file not present: " + SamplePath);
-            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(SamplePath);
+            string samplePath = $"Assets/Samples/Niantic/{sample}.spz";
+            if (!File.Exists(samplePath)) Assert.Ignore("Sample file not present: " + samplePath);
+            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(samplePath);
             Assert.IsNotNull(asset);
-            Directory.CreateDirectory("TestResults/compare");
+            string folder = $"TestResults/compare/{sample}";
+            Directory.CreateDirectory(folder);
 
             using (new UrpTestPipeline())
             {
@@ -59,7 +60,7 @@ namespace GSplat.Tests
                     string pose = string.Format(CultureInfo.InvariantCulture,
                         "{{ \"unity\": {{ \"position\": [{0}, {1}, {2}], \"lookDirection\": [0, 0, 1], \"fovVertical\": 60, \"width\": {3}, \"height\": {4} }},\n  \"threejs_rub\": {{ \"position\": [{0}, {1}, {5}], \"lookDirection\": [0, 0, -1], \"fovVertical\": 60 }} }}\n",
                         position.x, position.y, position.z, Width, Height, -position.z);
-                    File.WriteAllText("TestResults/compare/pose.json", pose);
+                    File.WriteAllText(folder + "/pose.json", pose);
 
                     while (!renderer.Gpu.IsFullyUploaded)
                     {
@@ -89,11 +90,11 @@ namespace GSplat.Tests
                         }
 
                         Texture2D capture = GoldenImage.Capture(target);
-                        File.WriteAllBytes($"TestResults/compare/unity_{name}.png", capture.EncodeToPNG());
+                        File.WriteAllBytes($"{folder}/unity_{name}.png", capture.EncodeToPNG());
                         Object.DestroyImmediate(capture);
                     }
 
-                    Debug.Log($"GSplat compare: asset SH degree {asset.ShDegree}");
+                    Debug.Log($"GSplat compare: {sample} SH degree {asset.ShDegree}, antialiased {asset.Antialiased}, pose {pose}");
 
                     Debug.Log("GSplat compare: frames written to TestResults/compare, pose " + pose);
                 }

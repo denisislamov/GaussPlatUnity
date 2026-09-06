@@ -24,13 +24,16 @@ namespace GSplat
         private int lastVisibleHash;
         private double lastTime;
 
-        public bool ShouldResort(float3 cameraPositionLocal, float3 cameraForwardLocal, int visibleChunksHash, double time)
+        /// <param name="ignoreRotation">True for radial sorting: the order depends on the camera position only.</param>
+        public bool ShouldResort(float3 cameraPositionLocal, float3 cameraForwardLocal, int visibleChunksHash, double time, bool ignoreRotation = false)
         {
             if (!hasSorted) return true;
             if (visibleChunksHash != lastVisibleHash) return true;
             if (time - lastTime < MinIntervalSeconds) return false;
 
             bool moved = math.distance(cameraPositionLocal, lastPosition) > MinMoveDistance;
+            if (ignoreRotation) return moved;
+
             float cosine = math.clamp(math.dot(math.normalizesafe(cameraForwardLocal), math.normalizesafe(lastForward)), -1f, 1f);
             bool turned = math.degrees(math.acos(cosine)) > MinRotationDegrees;
             return moved || turned;

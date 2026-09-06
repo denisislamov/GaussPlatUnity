@@ -31,7 +31,7 @@ Shader "GSplat/Splat"
             Texture2D<float4> _Splats;
             Texture2D<float4> _Order;
             Texture2D<float4> _Sh;
-            Texture2D<float4> _ChunkCenters;
+            Texture2D<float4> _ChunkRanges;
 
             CBUFFER_START(GSplatPerRenderer)
                 float _MaxStdDev;        // how far out (in standard deviations) the quad reaches; sqrt(8) desktop, sqrt(5) mobile
@@ -71,7 +71,7 @@ Shader "GSplat/Splat"
                 uint splatIndex = GSplatTexelToUint(_Order.Load(uint3(slot % GSPLAT_TEXTURE_WIDTH, slot / GSPLAT_TEXTURE_WIDTH, 0)));
                 GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, splatIndex));
                 uint chunkIndex = splatIndex / GSPLAT_CHUNK_SIZE;
-                float3 positionOS = s.position + _ChunkCenters.Load(uint3(chunkIndex, 0, 0)).xyz;
+                float3 positionOS = GSplatChunkPosition(_ChunkRanges, chunkIndex, s.position);
 
                 float3 positionWS = TransformObjectToWorld(positionOS);
                 float3 positionVS = TransformWorldToView(positionWS);
@@ -80,7 +80,6 @@ Shader "GSplat/Splat"
 
                 float4 positionCS = TransformWViewToHClip(positionVS);
                 float2 ndc = positionCS.xy / positionCS.w;
-                if (any(abs(ndc) > 1.3)) return Culled(); // well outside the screen, even with a big radius
 
                 float3x3 objectToWorld = (float3x3)UNITY_MATRIX_M;
                 float3x3 worldToView = (float3x3)UNITY_MATRIX_V;
@@ -114,6 +113,9 @@ Shader "GSplat/Splat"
                     radiusMajor *= shrink;
                     radiusMinor *= shrink;
                 }
+
+                // Off screen only when the whole quad is: big background splats often have their center outside the view.
+                if (any(abs(ndc) > 1.0 + radiusMajor * 2.0 / _ScreenParams.xy)) return Culled();
 
                 float2 corner = float2((vertexId & 1u) != 0u ? 1.0 : -1.0, (vertexId & 2u) != 0u ? 1.0 : -1.0);
                 float2 minorAxis = float2(-majorAxis.y, majorAxis.x);

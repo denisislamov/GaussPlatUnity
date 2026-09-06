@@ -131,6 +131,17 @@ namespace GSplat.Tests
         }
 
         [Test]
+        public void RadialSortIgnoresTurning()
+        {
+            var policy = new SplatSortPolicy();
+            var position = new Unity.Mathematics.float3(0f);
+            var forward = new Unity.Mathematics.float3(0f, 0f, 1f);
+            policy.MarkSorted(position, forward, 7, 0.0);
+            Assert.IsFalse(policy.ShouldResort(position, new Unity.Mathematics.float3(1f, 0f, 0f), 7, 1.0, ignoreRotation: true), "turned only");
+            Assert.IsTrue(policy.ShouldResort(position + new Unity.Mathematics.float3(0.1f, 0f, 0f), forward, 7, 1.0, ignoreRotation: true), "moved");
+        }
+
+        [Test]
         public void MovingTurningOrCullingChangeResort()
         {
             var policy = new SplatSortPolicy();

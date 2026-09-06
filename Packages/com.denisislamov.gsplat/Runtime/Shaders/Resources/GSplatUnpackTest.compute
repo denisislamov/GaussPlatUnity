@@ -4,7 +4,7 @@
 #include "../GSplatPacked.hlsl"
 
 Texture2D<float4> _Splats;
-StructuredBuffer<float4> _ChunkCenters; // xyz per chunk
+Texture2D<float4> _ChunkRanges;         // 2 texels per chunk: min, extent
 RWStructuredBuffer<float4> _Positions;  // xyz world position, w alpha
 RWStructuredBuffer<float4> _Scales;     // xyz scale
 RWStructuredBuffer<float4> _Rotations;  // xyzw
@@ -17,8 +17,7 @@ void Unpack(uint3 id : SV_DispatchThreadID)
     if (id.x >= _SplatCount) return;
 
     GSplatUnpacked s = GSplatUnpack(GSplatLoadPacked(_Splats, id.x));
-    float3 center = _ChunkCenters[id.x / 65536u].xyz;
-    _Positions[id.x] = float4(s.position + center, s.alpha);
+    _Positions[id.x] = float4(GSplatChunkPosition(_ChunkRanges, id.x / 65536u, s.position), s.alpha);
     _Scales[id.x] = float4(s.scale, 0);
     _Rotations[id.x] = s.rotation;
     _Colors[id.x] = float4(s.color, 0);
