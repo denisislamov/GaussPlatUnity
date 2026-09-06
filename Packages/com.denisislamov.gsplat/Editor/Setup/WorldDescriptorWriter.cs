@@ -22,19 +22,17 @@ namespace GSplat.Editor
             public float ground_plane_offset;
         }
 
-        private const string InnerTestFolder = "Assets/Samples/InnerTest";
-
-        [MenuItem("GSplat/Setup/Write World Descriptors for InnerTest Samples")]
-        public static void WriteInnerTestDescriptors()
+        /// <summary>One descriptor per sub-folder of <paramref name="folder"/> (each sub-folder is one world with its levels).</summary>
+        public static void WriteDescriptorsUnder(string folder)
         {
-            if (!Directory.Exists(InnerTestFolder))
+            if (!Directory.Exists(folder))
             {
-                Debug.LogWarning("GSplat: no " + InnerTestFolder + " folder.");
+                Debug.LogWarning("GSplat: no " + folder + " folder.");
                 return;
             }
 
             int written = 0;
-            foreach (string worldFolder in Directory.GetDirectories(InnerTestFolder))
+            foreach (string worldFolder in Directory.GetDirectories(folder))
             {
                 string path = WriteDescriptor(worldFolder);
                 if (path != null)

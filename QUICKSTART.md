@@ -10,6 +10,21 @@
 FPS in the editor is misleading while the Scene View is visible: it renders the splats a second
 time from its own camera. Collapse it or switch to Game View.
 
+## Install the package into your own project
+
+The package is a normal UPM package. In Package Manager choose "Install package from git URL" and paste:
+
+```
+https://github.com/denisislamov/GaussPlatUnity.git?path=/Packages/com.denisislamov.gsplat#v0.2.1
+```
+
+Change the tag at the end to the version you want (or use `#main`). Unity clones the whole repository for this, and
+it is a heavy one because of the sample worlds, so the first install takes a minute.
+
+Then add the renderer feature (menu GSplat, Setup, Add Renderer Feature to URP Renderers) and, if you want something
+to look at right away, import a sample from the package's Samples tab: "Viewer Scene" is the ready-made viewer,
+"Study Room 100k" is a small generated room already imported as an asset.
+
 ## Use your own file
 
 Three generated test worlds live in `Assets/Samples/InnerTest/` (four SPZ levels and a collider each), with one scene per

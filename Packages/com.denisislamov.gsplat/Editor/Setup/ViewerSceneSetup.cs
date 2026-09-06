@@ -16,12 +16,6 @@ namespace GSplat.Editor
             CreateViewerScene(path);
         }
 
-        /// <summary>Rewrites Assets/Scenes/SplatViewer.unity with the current component set (batch mode helper).</summary>
-        public static void RegenerateDefaultViewerScene()
-        {
-            CreateViewerScene("Assets/Scenes/SplatViewer.unity");
-        }
-
         public static void CreateViewerScene(string path)
         {
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);

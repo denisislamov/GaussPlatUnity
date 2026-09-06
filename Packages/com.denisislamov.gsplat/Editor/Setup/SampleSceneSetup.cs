@@ -7,27 +7,13 @@ using UnityEngine.SceneManagement;
 namespace GSplat.Editor
 {
     /// <summary>
-    /// Builds a scene that shows every GaussianSplatAsset found under a folder, side by side, with the fly camera and
-    /// the debug overlay. Used for the Niantic sample scenes (Assets/Samples/Niantic) but works for any folder.
+    /// Scene and import tools that work on a folder of splat files: one scene with every asset side by side, one scene
+    /// per world folder, and batch re-imports. The menu items with the example project's folders live in the project
+    /// (Assets/Spikes/Editor/ProjectMenus.cs); the package itself knows no project paths.
     /// </summary>
     public static class SampleSceneSetup
     {
-        private const string SamplesFolder = "Assets/Samples/Niantic";
-        private const string ScenePath = "Assets/Scenes/NianticSamples.unity";
-
-        [MenuItem("GSplat/Setup/Create Niantic Samples Scene")]
-        public static void CreateNianticSamplesScene()
-        {
-            CreateSceneFromFolder(SamplesFolder, ScenePath);
-        }
-
-        /// <summary>InnerTest exports use LDF axes (x left, y down, z forward); set that on every splat file under the InnerTest folder and re-import.</summary>
-        [MenuItem("GSplat/Setup/Reimport InnerTest Samples As LDF")]
-        public static void ReimportInnerTestSamplesAsLdf()
-        {
-            SetCoordinateSystem("Assets/Samples/InnerTest", SplatCoordinateSystem.Ldf);
-        }
-
+        /// <summary>Sets the axis convention on every .spz/.ply under <paramref name="folder"/> and re-imports the ones that change.</summary>
         public static void SetCoordinateSystem(string folder, SplatCoordinateSystem coordinateSystem)
         {
             if (!System.IO.Directory.Exists(folder)) return;
@@ -43,13 +29,6 @@ namespace GSplat.Editor
                 importer.SaveAndReimport();
                 Debug.Log($"GSplat: reimported as {coordinateSystem}: {file}");
             }
-        }
-
-        /// <summary>InnerTest exports are for internal testing only (their license does not allow redistribution): the folder is git-ignored.</summary>
-        [MenuItem("GSplat/Setup/Create InnerTest Scenes (one per world)")]
-        public static void CreateInnerTestScenes()
-        {
-            CreateScenePerWorld("Assets/Samples/InnerTest", "Assets/Scenes/InnerTest");
         }
 
         /// <summary>
@@ -91,43 +70,39 @@ namespace GSplat.Editor
             Debug.Log($"GSplat: {created} scene(s) written to {sceneFolder}.");
         }
 
-        /// <summary>P3: re-imports the Niantic and InnerTest samples with importance-ordered chunks, so the chunk budget has something to work with.</summary>
-        [MenuItem("GSplat/Setup/Reimport Samples With Importance-Ordered Chunks")]
-        public static void ReimportSamplesWithImportanceOrder()
+        /// <summary>P3: re-imports every .spz/.ply under <paramref name="folder"/> with importance-ordered chunks, so the chunk budget has something to work with.</summary>
+        public static void ReimportWithImportanceOrder(string folder)
         {
-            foreach (string folder in new[] { SamplesFolder, "Assets/Samples/InnerTest" })
-            {
-                if (!System.IO.Directory.Exists(folder)) continue;
-                foreach (string file in System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.AllDirectories))
-                {
-                    string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
-                    if (extension != ".spz" && extension != ".ply") continue;
-
-                    var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
-                    if (importer == null || importer.Options.OrderChunksByImportance) continue;
-                    importer.Options.OrderChunksByImportance = true;
-                    EditorUtility.SetDirty(importer);
-                    importer.SaveAndReimport();
-                    Debug.Log("GSplat: reimported with importance-ordered chunks: " + file);
-                }
-            }
-        }
-
-        /// <summary>Re-imports every .spz/.ply under the samples folder keeping SH degree 3 (the importer default is 0, tuned for phones).</summary>
-        [MenuItem("GSplat/Setup/Reimport Niantic Samples With SH 3")]
-        public static void ReimportSamplesWithSh3()
-        {
-            foreach (string file in System.IO.Directory.GetFiles(SamplesFolder))
+            if (!System.IO.Directory.Exists(folder)) return;
+            foreach (string file in System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.AllDirectories))
             {
                 string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
                 if (extension != ".spz" && extension != ".ply") continue;
 
                 var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
-                if (importer == null) continue;
-                importer.Options.TargetShDegree = ShMath.MaxDegree;
+                if (importer == null || importer.Options.OrderChunksByImportance) continue;
+                importer.Options.OrderChunksByImportance = true;
                 EditorUtility.SetDirty(importer);
                 importer.SaveAndReimport();
-                Debug.Log("GSplat: reimported with SH 3: " + file);
+                Debug.Log("GSplat: reimported with importance-ordered chunks: " + file);
+            }
+        }
+
+        /// <summary>Re-imports every .spz/.ply under <paramref name="folder"/> keeping SH up to <paramref name="shDegree"/> (the importer default is 0, tuned for phones).</summary>
+        public static void ReimportWithShDegree(string folder, int shDegree)
+        {
+            if (!System.IO.Directory.Exists(folder)) return;
+            foreach (string file in System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.AllDirectories))
+            {
+                string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                if (extension != ".spz" && extension != ".ply") continue;
+
+                var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
+                if (importer == null || importer.Options.TargetShDegree == shDegree) continue;
+                importer.Options.TargetShDegree = shDegree;
+                EditorUtility.SetDirty(importer);
+                importer.SaveAndReimport();
+                Debug.Log($"GSplat: reimported with SH {shDegree}: {file}");
             }
         }
 
