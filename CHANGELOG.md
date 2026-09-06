@@ -3,12 +3,23 @@
 Versions follow semantic versioning. The package version lives in `Packages/com.denisislamov.gsplat/package.json`
 and in `GSplatVersion.Current`; a test keeps them equal. Tags on `main` mark releases.
 
-## Unreleased
+## 0.2.1
 
-- Internal: readability refactoring with no change in behavior or performance (verified against golden images
-  and the frame-time tests from 0.2.0).
+Readability release: the code was reorganized so that each file does one thing and the long methods read as a
+list of steps. Rendering output and frame times are the same as 0.2.0 (checked against the golden images, two new
+ones of real scenes included, and the frame-time tests).
+
+- `GaussianSplatRenderer.TryPrepare` is three named steps; the per-camera state has its own file.
+- `SplatCameraView` carries the camera data both sorters need; the CPU job and the compute kernel read the same
+  struct. `ISplatSorter.PrepareOnMainThread` is now `Sort`, and `NeedsCompute` is gone (ask for `DrawArgs`).
+- The vertex shader is load, project, footprint, cull, corner, color; the quad math lives in `GSplatCore.hlsl`.
+- `SplatGpuData` upload paths, the PLY header parser and the world descriptor writer are split into small methods.
+- UI built in code (viewer overlay, scene-switch canvas) goes through `UiFactory`; one safe-area calculation.
+- Scene generators share `SceneObjects`; the viewer and InnerTest scenes were regenerated.
 - Web page hooks (`LoadFromPage`, `PauseFromPage`, `ResumeFromPage`) moved from `WorldLoader` to a small
   `WebPageBridge` component on the same object; the page template is unchanged.
+- Tests: shared test assembly, real-scene golden images, chunk upload readback, safe area, scene generators,
+  camera view (90 EditMode, 61 PlayMode).
 
 Known limits, each marked with a TODO in the code:
 
