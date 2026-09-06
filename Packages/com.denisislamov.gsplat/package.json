@@ -15,5 +15,28 @@
   "author": {
     "name": "Denis Islamov"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "samples": [
+    {
+      "displayName": "Viewer Scene",
+      "description": "The ready-to-run viewer: fly camera, world loader, UI, debug overlay and menu.",
+      "path": "Samples~/Viewer Scene"
+    },
+    {
+      "displayName": "Study Room 100k",
+      "description": "A small generated room (100k splats) as an imported asset, with a URP cube.",
+      "path": "Samples~/Study Room 100k"
+    }
+  ],
+  "documentationUrl": "https://github.com/denisislamov/GaussPlatUnity/blob/main/README.md",
+  "changelogUrl": "https://github.com/denisislamov/GaussPlatUnity/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/denisislamov/GaussPlatUnity/blob/main/LICENSE",
+  "keywords": [
+    "gaussian splatting",
+    "3dgs",
+    "spz",
+    "urp",
+    "webgl",
+    "mobile"
+  ]
 }
