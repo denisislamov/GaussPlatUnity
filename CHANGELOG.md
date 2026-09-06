@@ -3,6 +3,21 @@
 Versions follow semantic versioning. The package version lives in `Packages/com.denisislamov.gsplat/package.json`
 and in `GSplatVersion.Current`; a test keeps them equal. Tags on `main` mark releases.
 
+## Unreleased
+
+- A debug menu (the `≡` button in the top-right corner of every generated scene) with every performance knob:
+  sorter, vertices per splat, min pixel radius, quad reach, SH degree, render scale, chunk budget, fragment
+  options, sort key width, time-sliced CPU sort, re-sort thresholds, quality controller ladders, staged loading.
+  Settings persist on the device; see DEBUG-MENU.md. Defaults are unchanged.
+- A built-in benchmark: a fixed camera motion for 20 s per settings variant, a JSON report in the app's data folder
+  (`?bench=matrix` on the web).
+- Importance-ordered chunks (import option) and a per-chunk splat budget as a level-of-detail experiment.
+- One triangle per splat, 12-bit sort keys, a time-sliced CPU sort, a cheap Gaussian falloff and a switchable
+  low-alpha clip, all off by default.
+- The quality controller edits the shared settings, has a primitives-first ladder and can step back up.
+- Loading builds GPU data in stages with a frame between them; on the web SPZ decodes one attribute per frame.
+- WebGPU build target (experimental in this Unity version).
+
 ## 0.2.1
 
 Readability release: the code was reorganized so that each file does one thing and the long methods read as a
