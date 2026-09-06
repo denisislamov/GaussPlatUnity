@@ -3,6 +3,15 @@
 Versions follow semantic versioning. The package version lives in `Packages/com.denisislamov.gsplat/package.json`
 and in `GSplatVersion.Current`; a test keeps them equal. Tags on `main` mark releases.
 
+## Unreleased
+
+- WebGL: worlds load again. The renderer created structured GPU buffers for the compute sorter on every platform,
+  and WebGL2 has none, so `SetData` threw inside a fire-and-forget load and the viewer sat on "Preparing" with a
+  black screen. The buffers are now created only where compute shaders exist, and an unexpected exception in
+  `WorldLoader.LoadAsync` is logged and shown as a failed load instead of vanishing.
+- WebGL: the page hook and `Load On Start` no longer start the same load twice (one "Loading was cancelled" error
+  at startup).
+
 ## 0.2.1
 
 Readability release: the code was reorganized so that each file does one thing and the long methods read as a

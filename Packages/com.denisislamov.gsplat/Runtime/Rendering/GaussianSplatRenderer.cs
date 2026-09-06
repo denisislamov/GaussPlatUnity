@@ -329,7 +329,7 @@ namespace GSplat
             }
 
             lastVisibleChunkCount = state.VisibleChunkCount;
-            if (state.VisibleChunkCount > 0 && hash != state.UploadedVisibleHash)
+            if (state.VisibleChunkBuffer != null && state.VisibleChunkCount > 0 && hash != state.UploadedVisibleHash)
             {
                 state.VisibleChunkBuffer.SetData(state.VisibleChunks, 0, 0, state.VisibleChunkCount);
                 state.UploadedVisibleHash = hash;

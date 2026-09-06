@@ -13,6 +13,8 @@ namespace GSplat
     {
         public readonly SplatSortPolicy Policy = new SplatSortPolicy();
         public NativeArray<int> VisibleChunks; // not readonly: NativeArray is a struct and its indexer writes through the field
+
+        /// <summary>The visible list for the compute sorter; null where there are no compute shaders (see SplatGpuData.ChunkBuffer).</summary>
         public readonly GraphicsBuffer VisibleChunkBuffer;
         public int VisibleChunkCount;
 
@@ -22,13 +24,16 @@ namespace GSplat
         public SplatCameraState(int chunkCount)
         {
             VisibleChunks = new NativeArray<int>(math.max(1, chunkCount), Allocator.Persistent);
-            VisibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, chunkCount), sizeof(int)) { name = "GSplat Visible Chunks" };
+            if (SystemInfo.supportsComputeShaders)
+            {
+                VisibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, chunkCount), sizeof(int)) { name = "GSplat Visible Chunks" };
+            }
         }
 
         public void Dispose()
         {
             if (VisibleChunks.IsCreated) VisibleChunks.Dispose();
-            VisibleChunkBuffer.Dispose();
+            VisibleChunkBuffer?.Dispose();
         }
     }
 }

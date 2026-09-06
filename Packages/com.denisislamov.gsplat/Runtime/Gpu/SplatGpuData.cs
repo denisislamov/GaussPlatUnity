@@ -30,7 +30,10 @@ namespace GSplat
         /// <summary>Four RGBA8 texels per splat: uint k of splat i is texel 4i + k in row-major order. Point filtered, linear (not sRGB).</summary>
         public Texture2D SplatTexture { get; private set; }
 
-        /// <summary>One <see cref="SplatChunkInfo"/> per chunk.</summary>
+        /// <summary>
+        /// One <see cref="SplatChunkInfo"/> per chunk, for the compute sorter. Null on devices without compute shaders
+        /// (WebGL2, GLES 3.0): structured buffers do not exist there, and nothing else reads this one.
+        /// </summary>
         public GraphicsBuffer ChunkBuffer { get; private set; }
 
         /// <summary>
@@ -54,7 +57,7 @@ namespace GSplat
         public bool IsFullyUploaded => UploadedChunkCount == ChunkCount;
 
         /// <summary>Approximate GPU memory held by this object, for the memory budget (E6-T4).</summary>
-        public long GpuMemoryBytes => (long)SplatTexture.width * SplatTexture.height * 4 + (long)ChunkBuffer.count * ChunkBuffer.stride
+        public long GpuMemoryBytes => (long)SplatTexture.width * SplatTexture.height * 4 + (ChunkBuffer != null ? (long)ChunkBuffer.count * ChunkBuffer.stride : 0)
             + (ShTexture != null ? (long)ShTexture.width * ShTexture.height * 4 : 0) + (long)ChunkRangeTexture.width * 16;
 
         private readonly GsplatData source;
@@ -109,8 +112,11 @@ namespace GSplat
         /// <summary>The chunk table for compute (structured buffer) and for the vertex shader (range texture; GLES 3.0 has too few uniforms for an array).</summary>
         private void CreateChunkResources(GsplatData data)
         {
-            ChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, ChunkCount), 48) { name = "GSplat Chunks" };
-            if (ChunkCount > 0) ChunkBuffer.SetData(data.Chunks);
+            if (SystemInfo.supportsComputeShaders)
+            {
+                ChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, ChunkCount), 48) { name = "GSplat Chunks" };
+                if (ChunkCount > 0) ChunkBuffer.SetData(data.Chunks);
+            }
 
             ChunkRangeTexture = new Texture2D(math.max(2, ChunkCount * 2), 1, GraphicsFormat.R32G32B32A32_SFloat, TextureCreationFlags.None)
             {

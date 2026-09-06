@@ -81,6 +81,9 @@ namespace GSplat
 
         private void Start()
         {
+            // A load may already be running: on the web the page calls WebPageBridge.LoadFromPage as soon as the player
+            // is up, which can be before Start. Starting the same URL again would only cancel that first load.
+            if (cancellation != null) return;
             if (loadOnStart && !string.IsNullOrEmpty(worldUrl)) _ = LoadAsync(worldUrl);
         }
 
@@ -150,6 +153,13 @@ namespace GSplat
             catch (WorldDescriptorException e)
             {
                 Fail(SplatLoadError.UnsupportedFormat, e.Message);
+            }
+            catch (Exception e)
+            {
+                // LoadAsync is usually started fire-and-forget; an exception that escapes here would be lost with it
+                // and the viewer would sit in a loading state forever (which is what happened on WebGL before this catch).
+                Debug.LogException(e, this);
+                Fail(SplatLoadError.Unknown, e.Message);
             }
         }
 
