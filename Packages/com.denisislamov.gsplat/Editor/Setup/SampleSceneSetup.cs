@@ -22,6 +22,13 @@ namespace GSplat.Editor
             CreateSceneFromFolder(SamplesFolder, ScenePath);
         }
 
+        /// <summary>InnerTest exports are for internal testing only (their license does not allow redistribution): the folder is git-ignored.</summary>
+        [MenuItem("GSplat/Setup/Create InnerTest Samples Scene (Assets/Samples/InnerTest)")]
+        public static void CreateInnerTestSamplesScene()
+        {
+            CreateSceneFromFolder("Assets/Samples/InnerTest", "Assets/Scenes/InnerTestSamples.unity");
+        }
+
         /// <summary>Re-imports every .spz/.ply under the samples folder keeping SH degree 3 (the importer default is 0, tuned for phones).</summary>
         [MenuItem("GSplat/Setup/Reimport Niantic Samples With SH 3")]
         public static void ReimportSamplesWithSh3()

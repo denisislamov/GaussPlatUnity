@@ -20,7 +20,14 @@ namespace GSplat.Tests
         [UnityTest, Performance]
         public IEnumerator HornedLizardPortrait1080x1920([Values(SplatSorterKind.Gpu, SplatSorterKind.Cpu)] SplatSorterKind sorterKind)
         {
-            yield return Run(sorterKind, ShMath.MaxDegree, GaussianSplatRenderer.DefaultMaxStdDev, 0.3f, "sh3 sqrt8");
+            yield return Run(sorterKind, ShMath.MaxDegree, GaussianSplatRenderer.DefaultMaxStdDev, 0.5f, "sh3 sqrt8 (component defaults)");
+        }
+
+        /// <summary>Both samples with the component defaults: the number the samples scene shows on this machine.</summary>
+        [UnityTest, Performance]
+        public IEnumerator DefaultsPortrait1080x1920([Values("hornedlizard", "racoonfamily")] string sample)
+        {
+            yield return Run(SplatSorterKind.Gpu, ShMath.MaxDegree, GaussianSplatRenderer.DefaultMaxStdDev, 0.5f, "component defaults", 1080, 1920, true, sample);
         }
 
         /// <summary>Which knob buys the most: SH off, smaller quads (sqrt5), stricter sub-pixel cull.</summary>
@@ -37,12 +44,13 @@ namespace GSplat.Tests
             }
         }
 
-        private static IEnumerator Run(SplatSorterKind sorterKind, int shDegree, float maxStdDev, float minPixelRadius, string label, int width = 1080, int height = 1920, bool drawSplats = true)
+        private static IEnumerator Run(SplatSorterKind sorterKind, int shDegree, float maxStdDev, float minPixelRadius, string label, int width = 1080, int height = 1920, bool drawSplats = true, string sample = "hornedlizard")
         {
 #if UNITY_EDITOR
-            if (!File.Exists(SamplePath)) Assert.Ignore("Sample file not present: " + SamplePath);
+            string samplePath = $"Assets/Samples/Niantic/{sample}.spz";
+            if (!File.Exists(samplePath)) Assert.Ignore("Sample file not present: " + samplePath);
             if (sorterKind == SplatSorterKind.Gpu && !GpuCountingSorter.IsSupported) Assert.Ignore("No compute shaders on this device.");
-            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(SamplePath);
+            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(samplePath);
             Assert.IsNotNull(asset);
 
             using (new UrpTestPipeline())
@@ -101,7 +109,7 @@ namespace GSplat.Tests
                         yield return null;
                     }
 
-                    Debug.Log($"GSplat perf: hornedlizard {renderer.LastDrawnSplatCount:N0}/{renderer.SplatCount:N0} splats drawn, {renderer.LastVisibleChunkCount} chunks, sort {sorterKind}, {label}, {width}x{height}: {total / frames:F1} ms per frame (CPU submit + GPU).");
+                    Debug.Log($"GSplat perf: {sample} {renderer.LastDrawnSplatCount:N0}/{renderer.SplatCount:N0} splats drawn, {renderer.LastVisibleChunkCount} chunks, sort {sorterKind}, {label}, {width}x{height}: {total / frames:F1} ms per frame (CPU submit + GPU).");
                 }
                 finally
                 {

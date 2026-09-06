@@ -12,6 +12,10 @@ time from its own camera. Collapse it or switch to Game View.
 
 ## Use your own file
 
+InnerTest exports (World page > Export > Splats, or the World API) go into `Assets/Samples/InnerTest/`. That folder is
+git-ignored on purpose: InnerTest worlds are not redistributable. `GSplat > Setup > Create InnerTest Samples Scene` puts
+everything in that folder into one scene.
+
 1. Drop an `.spz` or `.ply` into `Assets/`. Select it: the import settings are on the file.
    The one that matters is **Source Coordinate System**. If the scene comes out mirrored or upside
    down, try another value and press Apply. RUB is right for Niantic and three.js files, RDF for
