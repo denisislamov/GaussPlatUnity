@@ -61,3 +61,5 @@ crashlytics-build.properties
 # Scene built from the git-ignored InnerTest exports: its references would be broken for anyone else
 /Assets/Scenes/InnerTestSamples.unity
 /Assets/Scenes/InnerTestSamples.unity.meta
+/Assets/Scenes/InnerTest/
+/Assets/Scenes/InnerTest.meta

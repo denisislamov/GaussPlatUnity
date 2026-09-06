@@ -47,10 +47,61 @@ namespace GSplat.Editor
         }
 
         /// <summary>InnerTest exports are for internal testing only (their license does not allow redistribution): the folder is git-ignored.</summary>
-        [MenuItem("GSplat/Setup/Create InnerTest Samples Scene (Assets/Samples/InnerTest)")]
-        public static void CreateInnerTestSamplesScene()
+        [MenuItem("GSplat/Setup/Create InnerTest Scenes (one per world)")]
+        public static void CreateInnerTestScenes()
         {
-            CreateSceneFromFolder("Assets/Samples/InnerTest", "Assets/Scenes/InnerTestSamples.unity");
+            CreateScenePerWorld("Assets/Samples/InnerTest", "Assets/Scenes/InnerTest");
+        }
+
+        /// <summary>
+        /// One scene per world folder, camera at the origin (InnerTest generation viewpoint), device quality applied in
+        /// players. Three 500k worlds in one scene were too much for a mid-range phone.
+        /// </summary>
+        public static void CreateScenePerWorld(string folder, string sceneFolder)
+        {
+            if (!System.IO.Directory.Exists(folder))
+            {
+                Debug.LogError("GSplat: no folder " + folder);
+                return;
+            }
+
+            System.IO.Directory.CreateDirectory(sceneFolder);
+            int created = 0;
+            foreach (string worldFolder in System.IO.Directory.GetDirectories(folder))
+            {
+                string name = System.IO.Path.GetFileName(worldFolder);
+                Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                List<GaussianSplatAsset> assets = FindAssets(worldFolder);
+                if (assets.Count == 0) continue;
+
+                var cameraObject = new GameObject("Main Camera");
+                Camera camera = cameraObject.AddComponent<Camera>();
+                camera.clearFlags = CameraClearFlags.SolidColor;
+                camera.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
+                camera.nearClipPlane = 0.05f;
+                camera.farClipPlane = 200f;
+                camera.fieldOfView = 65f;
+                cameraObject.tag = "MainCamera";
+                cameraObject.AddComponent<UniversalAdditionalCameraData>();
+                cameraObject.AddComponent<SplatFlyCamera>();
+
+                var holder = new GameObject(assets[0].name);
+                var renderer = holder.AddComponent<GaussianSplatRenderer>();
+                var serialized = new SerializedObject(renderer);
+                serialized.FindProperty("asset").objectReferenceValue = assets[0];
+                serialized.ApplyModifiedPropertiesWithoutUndo();
+
+                var viewer = new GameObject("Viewer");
+                viewer.AddComponent<SplatDebugOverlay>();
+                viewer.AddComponent<DeviceQualityApplier>();
+                viewer.AddComponent<SplatSceneMenu>();
+
+                string scenePath = $"{sceneFolder}/{name}.unity";
+                EditorSceneManager.SaveScene(scene, scenePath);
+                created++;
+            }
+
+            Debug.Log($"GSplat: {created} scene(s) written to {sceneFolder}.");
         }
 
         /// <summary>Re-imports every .spz/.ply under the samples folder keeping SH degree 3 (the importer default is 0, tuned for phones).</summary>

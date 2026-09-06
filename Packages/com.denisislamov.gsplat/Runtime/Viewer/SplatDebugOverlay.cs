@@ -64,11 +64,21 @@ namespace GSplat
         private void OnGUI()
         {
             if (!visible) return;
-            GUI.skin.label.fontSize = Mathf.Max(12, Screen.height / 60);
+
+            // Inside the safe area (notches, rounded corners) and as tall as the text needs; GUI space is y-down.
+            Rect safe = Screen.safeArea;
+            GUIStyle style = GUI.skin.label;
+            style.fontSize = Mathf.Max(12, Screen.height / 80);
+            style.wordWrap = true;
+            float x = safe.xMin + 10f;
+            float y = Screen.height - safe.yMax + 10f;
+            float width = safe.width - 20f;
+            float height = style.CalcHeight(new GUIContent(cachedText), width) + 4f;
+
             GUI.color = Color.black;
-            GUI.Label(new Rect(11f, 11f, Screen.width - 20f, 200f), cachedText);
+            GUI.Label(new Rect(x + 1f, y + 1f, width, height), cachedText, style);
             GUI.color = Color.white;
-            GUI.Label(new Rect(10f, 10f, Screen.width - 20f, 200f), cachedText);
+            GUI.Label(new Rect(x, y, width, height), cachedText, style);
         }
     }
 }

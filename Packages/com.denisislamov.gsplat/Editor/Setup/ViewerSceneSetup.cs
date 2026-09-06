@@ -17,6 +17,12 @@ namespace GSplat.Editor
             CreateViewerScene(path);
         }
 
+        /// <summary>Rewrites Assets/Scenes/SplatViewer.unity with the current component set (batch mode helper).</summary>
+        public static void RegenerateDefaultViewerScene()
+        {
+            CreateViewerScene("Assets/Scenes/SplatViewer.unity");
+        }
+
         public static void CreateViewerScene(string path)
         {
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -40,6 +46,7 @@ namespace GSplat.Editor
             viewer.AddComponent<SplatViewerUi>();
             viewer.AddComponent<SplatQualityController>();
             viewer.AddComponent<SplatDebugOverlay>();
+            viewer.AddComponent<SplatSceneMenu>();
 
             EditorSceneManager.SaveScene(scene, path);
             Debug.Log($"GSplat: viewer scene created at {path}. Set 'World Url' on the World object (a descriptor .json or a .spz URL) and press Play.");

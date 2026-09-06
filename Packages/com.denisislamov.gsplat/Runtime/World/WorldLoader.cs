@@ -275,8 +275,7 @@ namespace GSplat
             var child = new GameObject(objectName);
             child.transform.SetParent(WorldRoot, false);
             var renderer = child.AddComponent<GaussianSplatRenderer>();
-            renderer.MaxStdDev = ActiveProfile.MaxStdDev;
-            renderer.ShDegree = ActiveProfile.ShDegree;
+            ActiveProfile.ApplyTo(renderer);
             renderer.SetData(data, ownsData);
             return renderer;
         }
