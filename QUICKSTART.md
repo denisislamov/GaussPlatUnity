@@ -19,7 +19,7 @@ everything in that folder into one scene.
 1. Drop an `.spz` or `.ply` into `Assets/`. Select it: the import settings are on the file.
    The one that matters is **Source Coordinate System**. If the scene comes out mirrored or upside
    down, try another value and press Apply. RUB is right for Niantic and three.js files, RDF for
-   PLY from the original 3DGS code.
+   PLY from the original 3DGS code, LDF for InnerTest exports.
 2. Create an empty GameObject, add **GSplat > Gaussian Splat Renderer**, assign the asset.
 
 That is all. It renders in Scene and Game view next to your meshes.

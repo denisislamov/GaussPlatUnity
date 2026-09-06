@@ -22,6 +22,30 @@ namespace GSplat.Editor
             CreateSceneFromFolder(SamplesFolder, ScenePath);
         }
 
+        /// <summary>InnerTest exports use LDF axes (x left, y down, z forward); set that on every splat file under the InnerTest folder and re-import.</summary>
+        [MenuItem("GSplat/Setup/Reimport InnerTest Samples As LDF")]
+        public static void ReimportInnerTestSamplesAsLdf()
+        {
+            SetCoordinateSystem("Assets/Samples/InnerTest", SplatCoordinateSystem.Ldf);
+        }
+
+        public static void SetCoordinateSystem(string folder, SplatCoordinateSystem coordinateSystem)
+        {
+            if (!System.IO.Directory.Exists(folder)) return;
+            foreach (string file in System.IO.Directory.GetFiles(folder, "*.*", System.IO.SearchOption.AllDirectories))
+            {
+                string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                if (extension != ".spz" && extension != ".ply") continue;
+
+                var importer = AssetImporter.GetAtPath(file.Replace('\\', '/')) as SplatImporterBase;
+                if (importer == null || importer.Options.SourceCoordinateSystem == coordinateSystem) continue;
+                importer.Options.SourceCoordinateSystem = coordinateSystem;
+                EditorUtility.SetDirty(importer);
+                importer.SaveAndReimport();
+                Debug.Log($"GSplat: reimported as {coordinateSystem}: {file}");
+            }
+        }
+
         /// <summary>InnerTest exports are for internal testing only (their license does not allow redistribution): the folder is git-ignored.</summary>
         [MenuItem("GSplat/Setup/Create InnerTest Samples Scene (Assets/Samples/InnerTest)")]
         public static void CreateInnerTestSamplesScene()
@@ -104,18 +128,33 @@ namespace GSplat.Editor
             Debug.Log($"GSplat: sample scene with {assets.Count} asset(s) saved to {scenePath}.");
         }
 
+        /// <summary>
+        /// One asset per folder: when a folder holds several quality levels of the same world (InnerTest exports:
+        /// 100k/150k/500k/full_res) the 500k one is taken, else the largest. By file, not by "t:GaussianSplatAsset":
+        /// the type search index is not reliable right after a batch import.
+        /// </summary>
         private static List<GaussianSplatAsset> FindAssets(string folder)
         {
-            // By file, not by "t:GaussianSplatAsset": the type search index is not reliable right after a batch import.
             var result = new List<GaussianSplatAsset>();
             if (!System.IO.Directory.Exists(folder)) return result;
-            foreach (string file in System.IO.Directory.GetFiles(folder))
-            {
-                string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
-                if (extension != ".spz" && extension != ".ply") continue;
 
-                var asset = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(file.Replace('\\', '/'));
-                if (asset != null) result.Add(asset);
+            var folders = new List<string> { folder };
+            folders.AddRange(System.IO.Directory.GetDirectories(folder, "*", System.IO.SearchOption.AllDirectories));
+            foreach (string directory in folders)
+            {
+                GaussianSplatAsset chosen = null;
+                foreach (string file in System.IO.Directory.GetFiles(directory))
+                {
+                    string extension = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                    if (extension != ".spz" && extension != ".ply") continue;
+
+                    var asset = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(file.Replace('\\', '/'));
+                    if (asset == null) continue;
+                    bool preferred = file.Contains("_500k");
+                    if (chosen == null || preferred || (!chosen.name.Contains("_500k") && asset.SplatCount > chosen.SplatCount)) chosen = asset;
+                }
+
+                if (chosen != null) result.Add(chosen);
             }
 
             result.Sort((a, b) => string.CompareOrdinal(a.name, b.name));

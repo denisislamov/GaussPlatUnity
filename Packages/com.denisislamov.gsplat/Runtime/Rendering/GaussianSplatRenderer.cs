@@ -64,7 +64,7 @@ namespace GSplat
 
         [Header("Engine")]
         [SerializeField] private SplatSorterKind sorterKind = SplatSorterKind.Auto;
-        [SerializeField, Tooltip("Sort by distance to the camera (what InnerTest viewer does; turning the camera keeps the order valid) instead of by view depth (classic 3DGS).")]
+        [SerializeField, Tooltip("Sort by distance to the camera (what InnerTest viewer does) instead of by view depth (classic 3DGS). Matches Spark's output; see ADR-003.")]
         private bool sortRadial = true;
         [SerializeField, Min(1), Tooltip("Chunks (65k splats, 1 MB) uploaded per frame. Higher = faster appearance, longer frame.")]
         private int uploadChunksPerFrame = 2;
@@ -340,6 +340,7 @@ namespace GSplat
             SplatSortKeys.DepthRange(data.Chunks, visible, cameraPositionLocal, cameraForwardLocal, sortRadial, out float minDepth, out float maxDepth);
             // Per-splat culling in the key pass needs the projection; it assumes a perspective camera (w = depth).
             Matrix4x4 projection = camera.projectionMatrix;
+            bool cullInKeys = !camera.orthographic;
             var input = new SplatSortInput
             {
                 Data = data,
@@ -352,7 +353,7 @@ namespace GSplat
                 Radial = sortRadial,
                 MinDepth = minDepth,
                 MaxDepth = maxDepth,
-                CullInKeys = !camera.orthographic,
+                CullInKeys = cullInKeys,
                 LocalToClip = projection * camera.worldToCameraMatrix * localToWorld,
                 FocalPixelsY = Mathf.Abs(projection.m11) * camera.pixelHeight * 0.5f,
                 ScreenSize = new float2(camera.pixelWidth, camera.pixelHeight),
@@ -361,9 +362,11 @@ namespace GSplat
             };
 
             // The GPU sorter re-sorts for every camera that draws (its order texture is shared), so with two cameras
-            // it works every frame; the policy only saves work while a single camera stands still.
+            // it works every frame; the policy only saves work while a single camera stands still. Turning can be
+            // ignored only when the order is radial AND the key pass does not cull by view (culling is view-dependent).
             double now = Time.realtimeSinceStartupAsDouble;
-            bool resort = state.Policy.ShouldResort(cameraPositionLocal, cameraForwardLocal, hash, now, sortRadial) || (sorter.NeedsCompute && cameraStates.Count > 1);
+            bool ignoreRotation = sortRadial && !cullInKeys;
+            bool resort = state.Policy.ShouldResort(cameraPositionLocal, cameraForwardLocal, hash, now, ignoreRotation) || (sorter.NeedsCompute && cameraStates.Count > 1);
             sorter.PrepareOnMainThread(input, resort);
             if (resort) state.Policy.MarkSorted(cameraPositionLocal, cameraForwardLocal, hash, now);
 

@@ -60,6 +60,9 @@ namespace GSplat
         public string colliderUrl;
         public WorldSpawn spawn = new WorldSpawn();
 
+        /// <summary>Scale applied to the whole world so its units become meters (InnerTest: semantics_metadata.metric_scale_factor). 1 = already meters.</summary>
+        public float unitsToMeters = 1f;
+
         public bool HasCollider => !string.IsNullOrEmpty(colliderUrl);
 
         public SplatCoordinateSystem CoordinateSystem
@@ -99,6 +102,7 @@ namespace GSplat
                 }
             }
 
+            if (descriptor.unitsToMeters <= 0f) descriptor.unitsToMeters = 1f;
             // Validate the coordinate system now so a typo fails at parse time, not mid-load.
             _ = descriptor.CoordinateSystem;
             descriptor.levels.Sort((a, b) => a.splatCount.CompareTo(b.splatCount));

@@ -35,6 +35,7 @@ namespace GSplat
             {
                 loader.StateChanged += OnState;
                 loader.StatusChanged += OnStatus;
+                loader.SpawnKnown += OnSpawnKnown;
                 OnState(loader.State);
             }
 
@@ -47,6 +48,7 @@ namespace GSplat
             {
                 loader.StateChanged -= OnState;
                 loader.StatusChanged -= OnStatus;
+                loader.SpawnKnown -= OnSpawnKnown;
             }
 
             if (qualityController != null) qualityController.QualityReduced -= ShowNotice;
@@ -180,6 +182,13 @@ namespace GSplat
             {
                 flyCamera.SetLimitBounds(loader.CurrentRenderer.WorldBounds);
             }
+        }
+
+        private void OnSpawnKnown(Vector3 position, Quaternion rotation)
+        {
+            if (flyCamera == null) return;
+            flyCamera.SetSpawn(position, rotation);
+            flyCamera.ResetToSpawn();
         }
 
         private void OnStatus(SplatLoadStatus status)

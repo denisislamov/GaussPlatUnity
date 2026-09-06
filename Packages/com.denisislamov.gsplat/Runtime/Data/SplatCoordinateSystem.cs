@@ -16,6 +16,9 @@ namespace GSplat
         Rdf = 2,
 
         /// <summary>+X left, +Y up, +Z forward. glTF/GLB as written by the SPZ tools.</summary>
-        Luf = 3
+        Luf = 3,
+
+        /// <summary>+X left, +Y down, +Z forward. InnerTest (InnerTest) exports: a 180 degree turn about Z relative to Unity.</summary>
+        Ldf = 4
     }
 }

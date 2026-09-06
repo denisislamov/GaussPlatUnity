@@ -45,6 +45,7 @@ namespace GSplat
                 case SplatCoordinateSystem.Rub: return new bool3(false, false, true);
                 case SplatCoordinateSystem.Rdf: return new bool3(false, true, false);
                 case SplatCoordinateSystem.Luf: return new bool3(true, false, false);
+                case SplatCoordinateSystem.Ldf: return new bool3(true, true, false);
                 default: throw new ArgumentOutOfRangeException(nameof(source), source, "Unknown coordinate system.");
             }
         }

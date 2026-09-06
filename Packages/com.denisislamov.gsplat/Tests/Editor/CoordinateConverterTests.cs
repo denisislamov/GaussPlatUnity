@@ -42,6 +42,16 @@ namespace GSplat.Tests
         }
 
         [Test]
+        public void LdfNegatesXAndY()
+        {
+            using (SplatCloud cloud = TestClouds.Single(new float3(1, 2, 3), float3.zero, new float4(0, 0, 0, 1), 1f, float3.zero))
+            {
+                CoordinateConverter.ConvertToUnity(cloud, SplatCoordinateSystem.Ldf);
+                Assert.AreEqual(new float3(-1, -2, 3), cloud.Positions[0]);
+            }
+        }
+
+        [Test]
         public void MirroredRotationRotatesMirroredVectorsConsistently()
         {
             // For any vector v and rotation q: mirror(q * v) == mirror(q) * mirror(v). That is the property the

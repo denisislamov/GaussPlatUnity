@@ -29,6 +29,7 @@ namespace GSplat
         [SerializeField, Tooltip("Network retries per file before giving up.")]
         [Range(0, 5)] private int retries = 2;
 
+        private Transform worldRoot;
         private GaussianSplatRenderer current;
         private GaussianSplatRenderer incoming;
         private GsplatData firstLevelData;
@@ -51,6 +52,25 @@ namespace GSplat
 
         /// <summary>Raised when the descriptor names a collider GLB; the optional glTFast module listens and builds MeshColliders under the given parent.</summary>
         public event Action<string, Transform> ColliderRequested;
+
+        /// <summary>Raised once the descriptor is known: where the camera should start (world space), for the camera controller.</summary>
+        public event Action<Vector3, Quaternion> SpawnKnown;
+
+        /// <summary>Child that holds the splat renderers and the collider; scaled by the descriptor's unitsToMeters.</summary>
+        public Transform WorldRoot
+        {
+            get
+            {
+                if (worldRoot == null)
+                {
+                    var child = new GameObject("World Root");
+                    child.transform.SetParent(transform, false);
+                    worldRoot = child.transform;
+                }
+
+                return worldRoot;
+            }
+        }
 
         private void Start()
         {
@@ -87,7 +107,9 @@ namespace GSplat
             {
                 SetState(WorldLoadState.LoadingDescriptor);
                 Descriptor = await LoadDescriptorAsync(url, token);
-                if (Descriptor.HasCollider) ColliderRequested?.Invoke(Descriptor.colliderUrl, transform);
+                WorldRoot.localScale = Vector3.one * Descriptor.unitsToMeters;
+                SpawnKnown?.Invoke(transform.TransformPoint(Descriptor.spawn.Position), transform.rotation * Descriptor.spawn.Rotation);
+                if (Descriptor.HasCollider) ColliderRequested?.Invoke(Descriptor.colliderUrl, WorldRoot);
 
                 WorldLevel first = Descriptor.FirstLevel(ActiveProfile);
                 WorldLevel final = Descriptor.FinalLevel(ActiveProfile);
@@ -251,7 +273,7 @@ namespace GSplat
         private GaussianSplatRenderer CreateRenderer(string objectName, GsplatData data, bool ownsData)
         {
             var child = new GameObject(objectName);
-            child.transform.SetParent(transform, false);
+            child.transform.SetParent(WorldRoot, false);
             var renderer = child.AddComponent<GaussianSplatRenderer>();
             renderer.MaxStdDev = ActiveProfile.MaxStdDev;
             renderer.ShDegree = ActiveProfile.ShDegree;
