@@ -1,5 +1,5 @@
-# E0-T2. Требует секреты UNITY_LICENSE / UNITY_EMAIL / UNITY_PASSWORD (GameCI, https://game.ci/docs/github/activation).
-# Без них job падает на активации; это ожидаемо до настройки секретов.
+# Needs the UNITY_LICENSE / UNITY_EMAIL / UNITY_PASSWORD secrets (GameCI, https://game.ci/docs/github/activation).
+# Without them the jobs fail at activation; that is expected until the secrets are set up.
 name: CI
 
 on:
