@@ -28,14 +28,11 @@ namespace GSplat
         /// </summary>
         ComputeBuffer DrawArgs { get; }
 
-        /// <summary>True when <see cref="RecordCompute"/> must run before drawing (GPU sorter).</summary>
-        bool NeedsCompute { get; }
-
         /// <summary>
         /// Main-thread step, once per camera per frame. The CPU sorter finishes the previous job here and starts a new
         /// one when <paramref name="resort"/> is set; the GPU sorter only remembers the input for RecordCompute.
         /// </summary>
-        void PrepareOnMainThread(in SplatSortInput input, bool resort);
+        void Sort(in SplatSortInput input, bool resort);
 
         /// <summary>
         /// GPU step: records the compute dispatches into the frame. No-op for the CPU sorter. A plain CommandBuffer

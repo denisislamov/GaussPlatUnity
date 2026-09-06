@@ -24,7 +24,7 @@ namespace GSplat.Tests
                 SplatSortInput input = scene.Input();
                 Measure.Method(() =>
                     {
-                        sorter.PrepareOnMainThread(input, true);
+                        sorter.Sort(input, true);
                         sorter.CompleteNow();
                     })
                     .WarmupCount(3)
@@ -65,7 +65,7 @@ namespace GSplat.Tests
         private static void RunOnce(GpuCountingSorter sorter, SplatSortInput input, CommandBuffer commands)
         {
             commands.Clear();
-            sorter.PrepareOnMainThread(input, true);
+            sorter.Sort(input, true);
             sorter.RecordCompute(commands);
             Graphics.ExecuteCommandBuffer(commands);
             AsyncGPUReadbackRequest request = AsyncGPUReadback.Request(sorter.OrderTexture, 0, TextureFormat.RGBA32);

@@ -85,32 +85,46 @@ namespace GSplat
             Material splatMaterial = GetMaterial();
             if (splatMaterial == null || !PrepareItems(cameraData.camera)) return;
 
-            bool anyCompute = false;
-            for (int itemIndex = 0; itemIndex < items.Count; itemIndex++) anyCompute |= items[itemIndex].Sorter.NeedsCompute;
+            if (AnyItemSortsOnTheGpu()) AddSortPass(renderGraph);
+            AddDrawPass(renderGraph, resourceData, splatMaterial);
+        }
 
-            if (anyCompute)
+        /// <summary>Only the GPU sorter has indirect draw arguments, and only it has compute work to record.</summary>
+        private bool AnyItemSortsOnTheGpu()
+        {
+            for (int itemIndex = 0; itemIndex < items.Count; itemIndex++)
             {
-                // An "unsafe" pass because the sorters bind their own RenderTexture (not a graph resource) as a compute
-                // target, which the graph's ComputeCommandBuffer cannot do. The graph also cannot see that the draw pass
-                // reads that texture, so culling must be off and the two passes stay in recording order (they do:
-                // RenderGraph never reorders). TODO: import the order RenderTexture as an RTHandle to make the
-                // dependency explicit and unlock async compute.
-                using (IUnsafeRenderGraphBuilder builder = renderGraph.AddUnsafePass("Gaussian Splats Sort", out ComputePassData passData, profilingSampler))
-                {
-                    passData.Items.Clear();
-                    passData.Items.AddRange(items);
-                    builder.AllowPassCulling(false);
-                    builder.SetRenderFunc<ComputePassData>(static (data, context) =>
-                    {
-                        CommandBuffer commands = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
-                        for (int itemIndex = 0; itemIndex < data.Items.Count; itemIndex++)
-                        {
-                            if (data.Items[itemIndex].Sorter.NeedsCompute) data.Items[itemIndex].Sorter.RecordCompute(commands);
-                        }
-                    });
-                }
+                if (items[itemIndex].Sorter.DrawArgs != null) return true;
             }
 
+            return false;
+        }
+
+        /// <summary>
+        /// An "unsafe" pass because the sorters bind their own RenderTexture (not a graph resource) as a compute
+        /// target, which the graph's ComputeCommandBuffer cannot do. The graph also cannot see that the draw pass
+        /// reads that texture, so culling must be off and the two passes stay in recording order (they do:
+        /// RenderGraph never reorders). TODO: import the order RenderTexture as an RTHandle to make the
+        /// dependency explicit and unlock async compute.
+        /// </summary>
+        private void AddSortPass(RenderGraph renderGraph)
+        {
+            using (IUnsafeRenderGraphBuilder builder = renderGraph.AddUnsafePass("Gaussian Splats Sort", out ComputePassData passData, profilingSampler))
+            {
+                passData.Items.Clear();
+                passData.Items.AddRange(items);
+                builder.AllowPassCulling(false);
+                builder.SetRenderFunc<ComputePassData>(static (data, context) =>
+                {
+                    CommandBuffer commands = CommandBufferHelpers.GetNativeCommandBuffer(context.cmd);
+                    RecordSorts(data.Items, commands);
+                });
+            }
+        }
+
+        /// <summary>Draws every item into the camera color target, far to near, testing against the camera depth.</summary>
+        private void AddDrawPass(RenderGraph renderGraph, UniversalResourceData resourceData, Material splatMaterial)
+        {
             using (IRasterRenderGraphBuilder builder = renderGraph.AddRasterRenderPass("Gaussian Splats Draw", out RasterPassData passData, profilingSampler))
             {
                 passData.Items.Clear();
@@ -125,9 +139,10 @@ namespace GSplat
                     for (int itemIndex = 0; itemIndex < data.Items.Count; itemIndex++)
                     {
                         SplatDrawItem item = data.Items[itemIndex];
-                        if (item.DrawArgs != null)
+                        ComputeBuffer drawArgs = item.Sorter.DrawArgs;
+                        if (drawArgs != null)
                         {
-                            context.cmd.DrawProceduralIndirect(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, item.DrawArgs, 0, item.Properties);
+                            context.cmd.DrawProceduralIndirect(data.QuadIndices, item.LocalToWorld, data.Material, 0, MeshTopology.Triangles, drawArgs, 0, item.Properties);
                         }
                         else
                         {
@@ -135,6 +150,15 @@ namespace GSplat
                         }
                     }
                 });
+            }
+        }
+
+        /// <summary>RecordCompute is a no-op for the CPU sorter, so every item can be asked.</summary>
+        private static void RecordSorts(List<SplatDrawItem> sortItems, CommandBuffer commands)
+        {
+            for (int itemIndex = 0; itemIndex < sortItems.Count; itemIndex++)
+            {
+                sortItems[itemIndex].Sorter.RecordCompute(commands);
             }
         }
 
@@ -146,16 +170,15 @@ namespace GSplat
             if (splatMaterial == null || !PrepareItems(renderingData.cameraData.camera)) return;
 
             CommandBuffer commands = CommandBufferPool.Get("Gaussian Splats");
-            for (int itemIndex = 0; itemIndex < items.Count; itemIndex++)
-            {
-                if (items[itemIndex].Sorter.NeedsCompute) items[itemIndex].Sorter.RecordCompute(commands);
-            }
+            RecordSorts(items, commands);
 
+            // Same draw loop as the raster pass, on a plain CommandBuffer (the two command buffer types share no interface).
             GraphicsBuffer indices = GetQuadIndices();
             for (int itemIndex = 0; itemIndex < items.Count; itemIndex++)
             {
                 SplatDrawItem item = items[itemIndex];
-                if (item.DrawArgs != null) commands.DrawProceduralIndirect(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, item.DrawArgs, 0, item.Properties);
+                ComputeBuffer drawArgs = item.Sorter.DrawArgs;
+                if (drawArgs != null) commands.DrawProceduralIndirect(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, drawArgs, 0, item.Properties);
                 else commands.DrawProcedural(indices, item.LocalToWorld, splatMaterial, 0, MeshTopology.Triangles, 6, item.InstanceCount, item.Properties);
             }
 

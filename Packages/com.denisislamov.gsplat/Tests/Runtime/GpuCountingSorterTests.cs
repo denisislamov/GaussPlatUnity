@@ -20,7 +20,7 @@ namespace GSplat.Tests
             using (var sorter = new GpuCountingSorter(shader, count))
             using (var commands = new CommandBuffer())
             {
-                sorter.PrepareOnMainThread(scene.Input(), true);
+                sorter.Sort(scene.Input(), true);
                 Assert.AreEqual(count, sorter.OrderedSplatCount);
                 sorter.RecordCompute(commands);
                 Graphics.ExecuteCommandBuffer(commands);
@@ -40,7 +40,7 @@ namespace GSplat.Tests
             using (var scene = new SortTestScene(count) { Radial = radial })
             using (var sorter = new CpuCountingSorter(count))
             {
-                sorter.PrepareOnMainThread(scene.Input(), true);
+                sorter.Sort(scene.Input(), true);
                 Assert.AreEqual(0, sorter.OrderedSplatCount, "the first result arrives a frame later");
                 yield return null;
                 sorter.CompleteNow();
@@ -58,9 +58,9 @@ namespace GSplat.Tests
             using (var scene = new SortTestScene(3000))
             using (var sorter = new CpuCountingSorter(3000))
             {
-                sorter.PrepareOnMainThread(scene.Input(), true);
+                sorter.Sort(scene.Input(), true);
                 yield return null;
-                sorter.PrepareOnMainThread(scene.Input(), false); // collects the finished job, schedules nothing
+                sorter.Sort(scene.Input(), false); // collects the finished job, schedules nothing
                 sorter.CompleteNow();
                 Assert.AreEqual(3000, sorter.OrderedSplatCount);
                 Assert.IsFalse(sorter.IsSorting);

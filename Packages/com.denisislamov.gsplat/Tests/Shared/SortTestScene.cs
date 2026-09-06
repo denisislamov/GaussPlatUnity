@@ -52,16 +52,19 @@ namespace GSplat.Tests
             SplatSortKeys.DepthRange(Data.Chunks, VisibleChunks, CameraPosition, CameraForward, Radial, out float minDepth, out float maxDepth);
             return new SplatSortInput
             {
-                Radial = Radial,
                 Data = Data,
                 Gpu = Gpu,
                 VisibleChunks = VisibleChunks,
                 VisibleChunkBuffer = VisibleChunkBuffer,
                 VisibleSplatCount = Data.SplatCount,
-                CameraPositionLocal = CameraPosition,
-                CameraForwardLocal = CameraForward,
-                MinDepth = minDepth,
-                MaxDepth = maxDepth
+                View = new SplatCameraView
+                {
+                    PositionLocal = CameraPosition,
+                    ForwardLocal = CameraForward,
+                    Radial = Radial,
+                    MinDepth = minDepth,
+                    MaxDepth = maxDepth
+                }
             };
         }
 

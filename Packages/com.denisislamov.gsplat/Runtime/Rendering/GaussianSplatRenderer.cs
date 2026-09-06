@@ -70,36 +70,11 @@ namespace GSplat
         private int uploadChunksPerFrame = 2;
         [SerializeField] private SplatDebugMode debugMode = SplatDebugMode.None;
 
-        /// <summary>
-        /// What differs per camera: which chunks it sees and when it last needed a sort. Without this the Scene View
-        /// and the Game View camera would take turns invalidating each other's order every frame.
-        /// </summary>
-        private sealed class CameraState
-        {
-            public readonly SplatSortPolicy Policy = new SplatSortPolicy();
-            public NativeArray<int> VisibleChunks; // not readonly: NativeArray is a struct and its indexer writes through the field
-            public readonly GraphicsBuffer VisibleChunkBuffer;
-            public int VisibleChunkCount;
-            public int UploadedVisibleHash;
-
-            public CameraState(int chunkCount)
-            {
-                VisibleChunks = new NativeArray<int>(math.max(1, chunkCount), Allocator.Persistent);
-                VisibleChunkBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, math.max(1, chunkCount), sizeof(int)) { name = "GSplat Visible Chunks" };
-            }
-
-            public void Dispose()
-            {
-                if (VisibleChunks.IsCreated) VisibleChunks.Dispose();
-                VisibleChunkBuffer.Dispose();
-            }
-        }
-
         private GsplatData data;
         private bool ownsData;
         private SplatGpuData gpu;
         private ISplatSorter sorter;
-        private readonly Dictionary<Camera, CameraState> cameraStates = new Dictionary<Camera, CameraState>();
+        private readonly Dictionary<Camera, SplatCameraState> cameraStates = new Dictionary<Camera, SplatCameraState>();
         private int lastVisibleChunkCount;
         private MaterialPropertyBlock properties;
         private readonly List<int> visibleScratch = new List<int>();
@@ -140,7 +115,7 @@ namespace GSplat
 
             sorter?.Dispose();
             sorter = CreateSorter();
-            foreach (CameraState state in cameraStates.Values) state.Policy.Reset();
+            foreach (SplatCameraState state in cameraStates.Values) state.Policy.Reset();
         }
         public SplatDebugMode DebugMode { get => debugMode; set => debugMode = value; }
         public int UploadChunksPerFrame { get => uploadChunksPerFrame; set => uploadChunksPerFrame = Mathf.Max(1, value); }
@@ -256,14 +231,14 @@ namespace GSplat
             sorter = null;
             gpu?.Dispose();
             gpu = null;
-            foreach (CameraState state in cameraStates.Values) state.Dispose();
+            foreach (SplatCameraState state in cameraStates.Values) state.Dispose();
             cameraStates.Clear();
             lastVisibleChunkCount = 0;
         }
 
-        private CameraState StateFor(Camera camera)
+        private SplatCameraState StateFor(Camera camera)
         {
-            if (cameraStates.TryGetValue(camera, out CameraState state)) return state;
+            if (cameraStates.TryGetValue(camera, out SplatCameraState state)) return state;
 
             // Cameras come and go (Scene View, previews); drop states of destroyed ones so the dictionary stays small.
             if (cameraStates.Count > 8)
@@ -281,7 +256,7 @@ namespace GSplat
                 }
             }
 
-            state = new CameraState(data.ChunkCount);
+            state = new SplatCameraState(data.ChunkCount);
             cameraStates[camera] = state;
             return state;
         }
@@ -295,9 +270,49 @@ namespace GSplat
             item = default;
             if (camera == null || gpu == null || gpu.UploadedChunkCount == 0) return false;
 
-            CameraState state = StateFor(camera);
-            visibleScratch.Clear();
+            SplatCameraState state = StateFor(camera);
             Matrix4x4 localToWorld = transform.localToWorldMatrix;
+            int visibleSplats = CollectVisibleChunks(camera, localToWorld, state, out int visibleHash);
+            if (state.VisibleChunkCount == 0)
+            {
+                LastDrawnSplatCount = 0;
+                return false;
+            }
+
+            SplatSortInput input = BuildSortInput(camera, localToWorld, state, visibleSplats);
+
+            // The GPU sorter re-sorts for every camera that draws (its order texture is shared), so with two cameras
+            // it works every frame; the policy only saves work while a single camera stands still. Turning can be
+            // ignored only when the order is radial AND the key pass does not cull by view (culling is view-dependent).
+            double now = Time.realtimeSinceStartupAsDouble;
+            bool ignoreRotation = input.View.Radial && !input.View.CullInKeys;
+            bool sharedOrderTexture = sorter.DrawArgs != null && cameraStates.Count > 1;
+            bool resort = sharedOrderTexture || state.Policy.ShouldResort(input.View.PositionLocal, input.View.ForwardLocal, visibleHash, now, ignoreRotation);
+            sorter.Sort(input, resort);
+            if (resort) state.Policy.MarkSorted(input.View.PositionLocal, input.View.ForwardLocal, visibleHash, now);
+
+            if (sorter.OrderedSplatCount == 0) return false; // CPU sorter: first result not in yet
+
+            FillProperties();
+            LastDrawnSplatCount = sorter.OrderedSplatCount;
+            item = new SplatDrawItem
+            {
+                Sorter = sorter,
+                LocalToWorld = localToWorld,
+                Properties = properties,
+                InstanceCount = sorter.OrderedSplatCount,
+                DistanceToCamera = Vector3.Distance(camera.transform.position, WorldBounds.center)
+            };
+            return true;
+        }
+
+        /// <summary>
+        /// Frustum-culls the chunks for this camera into <paramref name="state"/> and uploads the list when it changed.
+        /// Returns the number of splats in the visible chunks; <paramref name="visibleHash"/> identifies the set.
+        /// </summary>
+        private int CollectVisibleChunks(Camera camera, Matrix4x4 localToWorld, SplatCameraState state, out int visibleHash)
+        {
+            visibleScratch.Clear();
             ChunkCulling.CollectVisible(camera, localToWorld, data.Chunks, visibleScratch);
 
             // Chunks still on their way to the GPU are not drawn yet: that is the progressive appearance of E2-T2.
@@ -314,42 +329,38 @@ namespace GSplat
             }
 
             lastVisibleChunkCount = state.VisibleChunkCount;
-            if (state.VisibleChunkCount == 0)
+            if (state.VisibleChunkCount > 0 && hash != state.UploadedVisibleHash)
             {
-                LastDrawnSplatCount = 0;
-                return false;
-            }
-
-            // Camera in the object's local space. The forward vector is transformed with the transpose (not the
-            // inverse) so that dot(localPosition, forward) stays proportional to the world-space view depth under
-            // non-uniform scale: depth = dot(M p + t - c, f) = dot(p, M^T f) + const.
-            float3 cameraPositionLocal = transform.InverseTransformPoint(camera.transform.position);
-            float3 cameraForwardLocal = math.normalizesafe((float3)localToWorld.transpose.MultiplyVector(camera.transform.forward), new float3(0f, 0f, 1f));
-
-            NativeArray<int> visible = state.VisibleChunks.GetSubArray(0, state.VisibleChunkCount);
-            if (hash != state.UploadedVisibleHash)
-            {
-                state.VisibleChunkBuffer.SetData(visible, 0, 0, state.VisibleChunkCount);
+                state.VisibleChunkBuffer.SetData(state.VisibleChunks, 0, 0, state.VisibleChunkCount);
                 state.UploadedVisibleHash = hash;
             }
 
+            visibleHash = hash;
+            return visibleSplats;
+        }
+
+        /// <summary>The camera in the object's local space plus everything the key pass needs, see <see cref="SplatCameraView"/>.</summary>
+        private SplatSortInput BuildSortInput(Camera camera, Matrix4x4 localToWorld, SplatCameraState state, int visibleSplats)
+        {
+            NativeArray<int> visible = state.VisibleChunks.GetSubArray(0, state.VisibleChunkCount);
+
+            // The forward vector is transformed with the transpose (not the inverse) so that dot(localPosition, forward)
+            // stays proportional to the world-space view depth under non-uniform scale:
+            // depth = dot(M p + t - c, f) = dot(p, M^T f) + const.
+            float3 cameraPositionLocal = transform.InverseTransformPoint(camera.transform.position);
+            float3 cameraForwardLocal = math.normalizesafe((float3)localToWorld.transpose.MultiplyVector(camera.transform.forward), new float3(0f, 0f, 1f));
             SplatSortKeys.DepthRange(data.Chunks, visible, cameraPositionLocal, cameraForwardLocal, sortRadial, out float minDepth, out float maxDepth);
+
             // Per-splat culling in the key pass needs the projection; it assumes a perspective camera (w = depth).
             Matrix4x4 projection = camera.projectionMatrix;
-            bool cullInKeys = !camera.orthographic;
-            var input = new SplatSortInput
+            var view = new SplatCameraView
             {
-                Data = data,
-                Gpu = gpu,
-                VisibleChunks = visible,
-                VisibleChunkBuffer = state.VisibleChunkBuffer,
-                VisibleSplatCount = visibleSplats,
-                CameraPositionLocal = cameraPositionLocal,
-                CameraForwardLocal = cameraForwardLocal,
+                PositionLocal = cameraPositionLocal,
+                ForwardLocal = cameraForwardLocal,
                 Radial = sortRadial,
                 MinDepth = minDepth,
                 MaxDepth = maxDepth,
-                CullInKeys = cullInKeys,
+                CullInKeys = !camera.orthographic,
                 LocalToClip = projection * camera.worldToCameraMatrix * localToWorld,
                 FocalPixelsY = Mathf.Abs(projection.m11) * camera.pixelHeight * 0.5f,
                 ScreenSize = new float2(camera.pixelWidth, camera.pixelHeight),
@@ -357,29 +368,15 @@ namespace GSplat
                 MinPixelRadius = minPixelRadius
             };
 
-            // The GPU sorter re-sorts for every camera that draws (its order texture is shared), so with two cameras
-            // it works every frame; the policy only saves work while a single camera stands still. Turning can be
-            // ignored only when the order is radial AND the key pass does not cull by view (culling is view-dependent).
-            double now = Time.realtimeSinceStartupAsDouble;
-            bool ignoreRotation = sortRadial && !cullInKeys;
-            bool resort = state.Policy.ShouldResort(cameraPositionLocal, cameraForwardLocal, hash, now, ignoreRotation) || (sorter.NeedsCompute && cameraStates.Count > 1);
-            sorter.PrepareOnMainThread(input, resort);
-            if (resort) state.Policy.MarkSorted(cameraPositionLocal, cameraForwardLocal, hash, now);
-
-            if (sorter.OrderedSplatCount == 0) return false; // CPU sorter: first result not in yet
-
-            FillProperties();
-            LastDrawnSplatCount = sorter.OrderedSplatCount;
-            item = new SplatDrawItem
+            return new SplatSortInput
             {
-                Sorter = sorter,
-                LocalToWorld = localToWorld,
-                Properties = properties,
-                InstanceCount = sorter.OrderedSplatCount,
-                DrawArgs = sorter.DrawArgs,
-                DistanceToCamera = Vector3.Distance(camera.transform.position, WorldBounds.center)
+                Data = data,
+                Gpu = gpu,
+                VisibleChunks = visible,
+                VisibleChunkBuffer = state.VisibleChunkBuffer,
+                VisibleSplatCount = visibleSplats,
+                View = view
             };
-            return true;
         }
 
         private void FillProperties()

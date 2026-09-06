@@ -50,7 +50,6 @@ namespace GSplat
 
         public Texture OrderTexture => orderTexture;
         public int OrderedSplatCount { get; private set; }
-        public bool NeedsCompute => true;
         public ComputeBuffer DrawArgs => drawArgs;
 
         public static bool IsSupported => SystemInfo.supportsComputeShaders;
@@ -91,7 +90,7 @@ namespace GSplat
             orderTexture.Create();
         }
 
-        public void PrepareOnMainThread(in SplatSortInput sortInput, bool resort)
+        public void Sort(in SplatSortInput sortInput, bool resort)
         {
             // Compute is cheap enough to run whenever the renderer asks; "resort == false" only means the caller
             // would accept the old order, and RecordCompute then draws nothing new.
@@ -111,18 +110,7 @@ namespace GSplat
             int bucketGroups = SplatSortKeys.BucketCount / Threads;
 
             commands.SetComputeIntParam(shader, SlotCountId, slotCount);
-            commands.SetComputeVectorParam(shader, CameraPositionId, (Vector3)input.CameraPositionLocal);
-            commands.SetComputeVectorParam(shader, CameraForwardId, (Vector3)input.CameraForwardLocal);
-            SplatSortKeys.LogRange(input.MinDepth, input.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
-            commands.SetComputeFloatParam(shader, LogMinDepthId, logMinDepth);
-            commands.SetComputeFloatParam(shader, InverseLogDepthRangeId, inverseLogDepthRange);
-            commands.SetComputeIntParam(shader, CullInKeysId, input.CullInKeys ? 1 : 0);
-            commands.SetComputeIntParam(shader, SortRadialId, input.Radial ? 1 : 0);
-            commands.SetComputeMatrixParam(shader, LocalToClipId, input.LocalToClip);
-            commands.SetComputeFloatParam(shader, FocalPixelsYId, input.FocalPixelsY);
-            commands.SetComputeVectorParam(shader, ScreenSizeId, new Vector4(input.ScreenSize.x, input.ScreenSize.y, 0f, 0f));
-            commands.SetComputeFloatParam(shader, MaxStdDevId, input.MaxStdDev);
-            commands.SetComputeFloatParam(shader, MinPixelRadiusId, input.MinPixelRadius);
+            SetViewParams(commands, input.View);
 
             commands.SetComputeBufferParam(shader, clearKernel, HistogramId, histogram);
             commands.DispatchCompute(shader, clearKernel, bucketGroups, 1, 1);
@@ -145,6 +133,23 @@ namespace GSplat
             commands.DispatchCompute(shader, scatterKernel, slotGroups, 1, 1);
 
             hasInput = false;
+        }
+
+        /// <summary>The camera block of the key kernel; the same fields the CPU KeyJob reads from SplatCameraView.</summary>
+        private void SetViewParams(CommandBuffer commands, in SplatCameraView view)
+        {
+            commands.SetComputeVectorParam(shader, CameraPositionId, (Vector3)view.PositionLocal);
+            commands.SetComputeVectorParam(shader, CameraForwardId, (Vector3)view.ForwardLocal);
+            SplatSortKeys.LogRange(view.MinDepth, view.MaxDepth, out float logMinDepth, out float inverseLogDepthRange);
+            commands.SetComputeFloatParam(shader, LogMinDepthId, logMinDepth);
+            commands.SetComputeFloatParam(shader, InverseLogDepthRangeId, inverseLogDepthRange);
+            commands.SetComputeIntParam(shader, CullInKeysId, view.CullInKeys ? 1 : 0);
+            commands.SetComputeIntParam(shader, SortRadialId, view.Radial ? 1 : 0);
+            commands.SetComputeMatrixParam(shader, LocalToClipId, view.LocalToClip);
+            commands.SetComputeFloatParam(shader, FocalPixelsYId, view.FocalPixelsY);
+            commands.SetComputeVectorParam(shader, ScreenSizeId, new Vector4(view.ScreenSize.x, view.ScreenSize.y, 0f, 0f));
+            commands.SetComputeFloatParam(shader, MaxStdDevId, view.MaxStdDev);
+            commands.SetComputeFloatParam(shader, MinPixelRadiusId, view.MinPixelRadius);
         }
 
         public void Dispose()

@@ -63,11 +63,14 @@ namespace GSplat.Sandbox
                 VisibleChunks = visibleChunks,
                 VisibleChunkBuffer = visibleChunkBuffer,
                 VisibleSplatCount = data.SplatCount,
-                CameraPositionLocal = CameraPosition,
-                CameraForwardLocal = CameraForward,
-                Radial = true,
-                MinDepth = minDepth,
-                MaxDepth = maxDepth
+                View = new SplatCameraView
+                {
+                    PositionLocal = CameraPosition,
+                    ForwardLocal = CameraForward,
+                    Radial = true,
+                    MinDepth = minDepth,
+                    MaxDepth = maxDepth
+                }
             };
 
             cpuSorter = new CpuCountingSorter(data.SplatCount);
@@ -88,7 +91,7 @@ namespace GSplat.Sandbox
 
             // One iteration per frame so the screen keeps updating on slow phones.
             float cpuStart = Time.realtimeSinceStartup;
-            cpuSorter.PrepareOnMainThread(input, true);
+            cpuSorter.Sort(input, true);
             cpuSorter.CompleteNow();
             cpuMilliseconds.Add((Time.realtimeSinceStartup - cpuStart) * 1000f);
 
@@ -97,7 +100,7 @@ namespace GSplat.Sandbox
                 // Wall time around execute + synchronous readback: the cost of a frame that needs the order right away.
                 float gpuStart = Time.realtimeSinceStartup;
                 gpuCommands.Clear();
-                gpuSorter.PrepareOnMainThread(input, true);
+                gpuSorter.Sort(input, true);
                 gpuSorter.RecordCompute(gpuCommands);
                 Graphics.ExecuteCommandBuffer(gpuCommands);
                 AsyncGPUReadbackRequest readback = AsyncGPUReadback.Request(gpuSorter.OrderTexture, 0, TextureFormat.RGBA32);
